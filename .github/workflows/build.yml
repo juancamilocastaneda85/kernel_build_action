@@ -17,14 +17,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3
+          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils
 
       - name: Download clang-r416183b
         run: |
           mkdir -p clang
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b.tar.gz -O clang.tar.gz
-          tar -xzf clang.tar.gz -C clang
-          rm clang.tar.gz
+          wget -q https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.0/clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz -O clang.tar.xz
+          tar -xf clang.tar.xz -C clang --strip-components=1
+          rm clang.tar.xz
 
       - name: Configure kernel
         run: |

@@ -34,15 +34,8 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --disable CONFIG_LTO
           ./scripts/config --file ../out/.config --disable CONFIG_MODULE_REL_CRCS
-          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG
-          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG_ALL
-          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG_FORCE
-          ./scripts/config --file ../out/.config --disable CONFIG_STRICT_MODULE_RWX
-          ./scripts/config --file ../out/.config --module CONFIG_MAC80211
-          ./scripts/config --file ../out/.config --module CONFIG_CFG80211
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
-          yes "" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel
         run: |

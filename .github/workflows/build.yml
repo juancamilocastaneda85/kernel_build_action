@@ -42,7 +42,7 @@ jobs:
           ./scripts/config --file ../out/.config --module CONFIG_CFG80211
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
-          make ARCH=arm64 O=../out olddefconfig
+          yes "" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel
         run: |

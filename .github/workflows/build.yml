@@ -30,7 +30,7 @@ jobs:
         run: |
           cd kernel
           make ARCH=arm64 O=../out vendor/fogos_defconfig
-          ./scripts/config --file ../out/.config --enable CONFIG_MT7601U
+          ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --disable CONFIG_LTO
           ./scripts/config --file ../out/.config --disable CONFIG_MODULE_REL_CRCS
@@ -47,7 +47,7 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
-            Image
+            Image modules
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

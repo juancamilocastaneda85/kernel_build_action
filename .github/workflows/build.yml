@@ -1,30 +1,25 @@
-# A simple action usage
-name: Build Kernel
+name: Build Kernel with MT7601U
+
 on:
   workflow_dispatch:
 
 jobs:
-  Build-Kernel:
-    strategy:
-      fail-fast: false
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Build Kernel
-        uses: dabao1955/kernel_build_action@main
+        uses: ./
         with:
-          kernel-url: https://github.com/AcmeUI-Devices/android_kernel_xiaomi_cas
-          kernel-dir: msm-4.19
-          kernel-branch: taffy
-          config: cas_defconfig
+          kernel-url: https://github.com/SushiKernel/android_kernel_motorola_fogos_nah
+          kernel-branch: seventeen
+          config: vendor/fogos_defconfig
           arch: arm64
-          aosp-gcc: true
           aosp-clang: true
-          ksu: true
-          ksu-version: main
-          android-version: 12
-          aosp-clang-version: r383902
+          aosp-clang-version: r416183b
+          nethunter: true
           disable-lto: true
-          anykernel3: true
+          ksu: false
+          ksu-lkm: true

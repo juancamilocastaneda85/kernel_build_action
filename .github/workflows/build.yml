@@ -7,13 +7,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false   # <-- Añade esta línea
-
       - name: Build Kernel
-        uses: ./
+        uses: dabao1955/kernel_build_action@main
         with:
           kernel-url: https://github.com/SushiKernel/android_kernel_motorola_fogos_nah
           kernel-branch: seventeen

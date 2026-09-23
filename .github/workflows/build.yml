@@ -29,7 +29,7 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
-          make ARCH=arm64 O=../out vendor/fogos_defconfig
+          make ARCH=arm64 O=../out CC=../clang/bin/clang LD=../clang/bin/ld.lld vendor/fogos_defconfig
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG
@@ -43,7 +43,7 @@ jobs:
           ./scripts/config --file ../out/.config --module CONFIG_CFG80211
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
-          make ARCH=arm64 O=../out olddefconfig < /dev/null
+          make ARCH=arm64 O=../out CC=../clang/bin/clang LD=../clang/bin/ld.lld olddefconfig < /dev/null
 
       - name: Build kernel
         run: |

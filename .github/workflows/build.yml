@@ -17,6 +17,7 @@ jobs:
           kernel-branch: seventeen
           config: vendor/fogos_defconfig
           arch: arm64
+          aosp-gcc: true
           aosp-clang: true
           aosp-clang-version: r416183b
           nethunter: true

@@ -71,6 +71,8 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_SCHED_CASS
           ./scripts/config --file ../out/.config --enable CONFIG_SND_SOC_FS1815
           ./scripts/config --file ../out/.config --enable CONFIG_SND_SOC_FS1815_DLKM
+          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG
+          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG_SHADOW
           yes "1" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel
@@ -84,6 +86,7 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
+            KCFLAGS="-fsanitize=cfi" \
             Image modules
 
       - name: Upload artifacts

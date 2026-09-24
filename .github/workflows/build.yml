@@ -29,22 +29,23 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
-          make ARCH=arm64 O=../out CC=../clang/bin/clang LD=../clang/bin/ld.lld vendor/fogos_defconfig
+          make ARCH=arm64 O=../out vendor/fogos_defconfig
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
+          ./scripts/config --file ../out/.config --disable CONFIG_LTO
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG
-          ./scripts/config --file ../out/.config --enable CONFIG_LTO_NONE
+          ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file ../out/.config --disable CONFIG_MODULE_REL_CRCS
           ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG
           ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG_ALL
           ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG_FORCE
           ./scripts/config --file ../out/.config --disable CONFIG_STRICT_MODULE_RWX
-          ./scripts/config --file ../out/.config --enable CONFIG_MODVERSIONS
-          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG
-          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG_SHADOW
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
-          make ARCH=arm64 O=../out CC=../clang/bin/clang LD=../clang/bin/ld.lld olddefconfig < /dev/null
+          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG
+          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG_SHADOW
+          yes "1" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel
         run: |
@@ -57,7 +58,7 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
-            Image modules < /dev/null
+            Image modules
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

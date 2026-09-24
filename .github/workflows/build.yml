@@ -49,6 +49,8 @@ jobs:
           sed -i 's/sysstats_fill_zoneinfo(stats);/\/\/ PATCH: ignore sysstats_fill_zoneinfo/' kernel/taskstats.c
           sed -i 's/static const u32 gpll0_a53cc_map\[\] = {/static const struct parent_map gpll0_a53cc_map[] = {/' drivers/clk/qcom/apcs-msm8916.c
           sed -i '/rc80211_minstrel\.o/d' net/mac80211/Makefile
+          sed -i '/^enum {/a \	P_XO,\n\tP_GPLL0_OUT_AUX,' drivers/clk/qcom/gcc-qcs404.c
+          sed -i 's/qrtr_endpoint_register(&tun->ep, QRTR_EP_NET_ID_AUTO, 0)/qrtr_endpoint_register(\&tun->ep, QRTR_EP_NET_ID_AUTO, false, THIS_MODULE)/' net/qrtr/tun.c
 
           echo "Kernel source patched."
 

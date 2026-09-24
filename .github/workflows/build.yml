@@ -51,6 +51,8 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_SND_SOC_FS1815
           ./scripts/config --file ../out/.config --enable CONFIG_SND_SOC_FS1815_DLKM
           ./scripts/config --file ../out/.config --enable CONFIG_TASKS_TRACE_RCU
+          ./scripts/config --file ../out/.config --enable CONFIG_TASKS_RCU
+          ./scripts/config --file ../out/.config --enable CONFIG_BPF_SYSCALL
           yes "1" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel

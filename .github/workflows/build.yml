@@ -37,19 +37,19 @@ jobs:
           done
           echo "Fixed pgtable.h includes"
 
-      - name: Create missing Makefiles
+      - name: Create fs1815 Makefile
         run: |
           cd kernel
-          for dir in $(find techpack/audio -type d -name "fs*" -o -name "aw*" -o -name "wcd*" -o -name "bolero" -o -name "csra*"); do
-            if [ ! -f "$dir/Makefile" ]; then
-              echo "Creating Makefile in $dir"
-              cat > "$dir/Makefile" << 'EOF'
-          # Auto-generated Makefile
-          obj-$(CONFIG_SND_SOC_$(shell basename $(dirname $(pwd)))) += $(shell basename $(dirname $(pwd))).o
+          if [ ! -f techpack/audio/asoc/codecs/fs1815/Makefile ]; then
+            cat > techpack/audio/asoc/codecs/fs1815/Makefile << 'EOF'
+          # SPDX-License-Identifier: GPL-2.0-only
+          snd-soc-fs1815-objs := fs1815.o fsm_core.o fsm_firmware.o fsm_i2c.o fsm_misc.o
+          obj-$(CONFIG_SND_SOC_FS1815) += snd-soc-fs1815.o
           EOF
-            fi
-          done
-          echo "Created missing Makefiles"
+            echo "Created fs1815 Makefile"
+          else
+            echo "fs1815 Makefile already exists"
+          fi
 
       - name: Configure kernel
         run: |

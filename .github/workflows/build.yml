@@ -32,9 +32,22 @@ jobs:
       - name: Patch Kernel Source
         run: |
           cd kernel
-          echo "static inline bool probe_user_write(const void __user *dst, const void *src, size_t len) { return false; }" >> include/linux/uaccess.h
+
+          if ! grep -q "probe_user_write" include/linux/uaccess.h; then
+            cat >> include/linux/uaccess.h << 'EOF'
+
+          static inline bool probe_user_write(const void __user *dst, const void *src, size_t len)
+          {
+              if (!access_ok(dst, len))
+                  return false;
+              return !copy_to_user((void __user *)dst, src, len);
+          }
+          EOF
+          fi
+
           sed -i 's/^#elif$/#elif defined(CONFIG_SYSSTATS)/' kernel/taskstats.c
           sed -i 's/sysstats_fill_zoneinfo(stats);/\/\/ PATCH: ignore sysstats_fill_zoneinfo/' kernel/taskstats.c
+
           echo "Kernel source patched."
 
       - name: Configure kernel

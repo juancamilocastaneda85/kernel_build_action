@@ -29,7 +29,7 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
-          make ARCH=arm64 O=../out vendor/fogos_defconfig
+          cp ../fogos_real_config ../out/.config
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --disable CONFIG_LTO
@@ -37,14 +37,8 @@ jobs:
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file ../out/.config --disable CONFIG_MODULE_REL_CRCS
-          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG
-          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG_ALL
-          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG_FORCE
-          ./scripts/config --file ../out/.config --disable CONFIG_STRICT_MODULE_RWX
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
-          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG
-          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG_SHADOW
           yes "1" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel

@@ -25,22 +25,16 @@ jobs:
       - name: Download clang-r416183b
         run: |
           mkdir -p clang
-          wget -q "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/b669748458572622ed716407611633c5415da25c/clang-r416183b.tar.gz" -O clang.tar.gz
-          tar -xf clang.tar.gz -C clang
+          wget -q https://github.com/MiCodeX/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/archive/refs/heads/master.tar.gz -O clang.tar.gz
+          tar -xf clang.tar.gz -C clang --strip-components=1
           rm clang.tar.gz
 
       - name: Patch Kernel Source
         run: |
           cd kernel
-
-          # 1. Arreglar el error de 'probe_user_write' en todos los archivos
-          # Añadimos una definición dummy de la función para que el compilador no se queje
           echo "static inline bool probe_user_write(const void __user *dst, const void *src, size_t len) { return false; }" >> include/linux/uaccess.h
-
-          # 2. Arreglar el error de '#elif' y 'sysstats_fill_zoneinfo' en taskstats.c
           sed -i 's/^#elif$/#elif defined(CONFIG_SYSSTATS)/' kernel/taskstats.c
           sed -i 's/sysstats_fill_zoneinfo(stats);/\/\/ PATCH: ignore sysstats_fill_zoneinfo/' kernel/taskstats.c
-
           echo "Kernel source patched."
 
       - name: Configure kernel

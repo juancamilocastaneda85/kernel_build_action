@@ -47,6 +47,8 @@ jobs:
 
           sed -i 's/^#elif$/#elif defined(CONFIG_SYSSTATS)/' kernel/taskstats.c
           sed -i 's/sysstats_fill_zoneinfo(stats);/\/\/ PATCH: ignore sysstats_fill_zoneinfo/' kernel/taskstats.c
+          sed -i 's/static const u32 gpll0_a53cc_map\[\] = {/static const struct parent_map gpll0_a53cc_map[] = {/' drivers/clk/qcom/apcs-msm8916.c
+          sed -i '/rc80211_minstrel\.o/d' net/mac80211/Makefile
 
           echo "Kernel source patched."
 

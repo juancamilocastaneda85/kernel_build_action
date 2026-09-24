@@ -82,24 +82,17 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_TASKS_RCU
           ./scripts/config --file ../out/.config --enable CONFIG_BPF_SYSCALL
           ./scripts/config --file ../out/.config --enable CONFIG_QCOM_SCM
-          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
-          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
-          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
+          # Forzar los drivers problemáticos a built-in (=y)
           cat >> ../out/.config << 'EOF'
-          # CONFIG_SND_SOC_AW882XX is not set
-          # CONFIG_SND_SOC_AW882XX_ACF is not set
-          # CONFIG_GOODIX_FOD_MMI is not set
-          # CONFIG_MSM_CAMERA_CCI is not set
-          # CONFIG_CCI_INTF is not set
-          # CONFIG_DRM_PANEL_NOTIFIER is not set
-          # CONFIG_I2C_QCOM_GENI is not set
-          # CONFIG_TOUCHSCREEN_SYNAPTICS_DSX is not set
-          # CONFIG_TOUCHSCREEN_CHIPONE_TDDI_V2_MMI is not set
-          # CONFIG_TOUCHSCREEN_ILITEK_V3_MMI is not set
-          # CONFIG_QPNP_ADAPTIVE_CHARGE is not set
-          # CONFIG_MMI_SMBCHARGER_IIO is not set
-          # CONFIG_MSM_POWEROFF is not set
-          # CONFIG_STMMAC_ETH is not set
+          CONFIG_SND_SOC_AW882XX=y
+          CONFIG_SND_SOC_AW882XX_ACF=y
+          CONFIG_SND_SOC_FS1815=y
+          CONFIG_SND_SOC_FS1815_DLKM=y
+          CONFIG_MSM_CAMERA_CCI=y
+          CONFIG_CCI_INTF=y
+          CONFIG_GOODIX_FOD_MMI=y
+          CONFIG_DRM_PANEL_NOTIFIER=y
+          CONFIG_MAC80211=y
           CONFIG_MAC80211_RC_MINSTREL=y
           CONFIG_MAC80211_RC_MINSTREL_HT=y
           EOF

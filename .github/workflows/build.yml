@@ -34,15 +34,15 @@ jobs:
           cd kernel
 
           if ! grep -q "probe_user_write" include/linux/uaccess.h; then
-            cat >> include/linux/uaccess.h << 'EOF'
-
-          static inline bool probe_user_write(const void __user *dst, const void *src, size_t len)
-          {
-              if (!access_ok(dst, len))
-                  return false;
-              return !copy_to_user((void __user *)dst, src, len);
-          }
-          EOF
+            LINE=$(grep -n "^#endif" include/linux/uaccess.h | tail -1 | cut -d: -f1)
+            sed -i "${LINE}i\\
+          \\
+          static inline bool probe_user_write(const void __user *dst, const void *src, size_t len)\\
+          {\\
+              if (!access_ok(dst, len))\\
+                  return false;\\
+              return !copy_to_user((void __user *)dst, src, len);\\
+          }" include/linux/uaccess.h
           fi
 
           sed -i 's/^#elif$/#elif defined(CONFIG_SYSSTATS)/' kernel/taskstats.c

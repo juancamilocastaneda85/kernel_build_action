@@ -85,7 +85,6 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
-          # Fijar las opciones problemáticas a la fuerza en el .config
           cat >> ../out/.config << 'EOF'
           # CONFIG_SND_SOC_AW882XX is not set
           # CONFIG_SND_SOC_AW882XX_ACF is not set
@@ -108,6 +107,7 @@ jobs:
 
       - name: Verify .config
         run: |
+          cd kernel
           echo "=== Opciones problemáticas ==="
           grep -E "CONFIG_(SND_SOC_AW882XX|GOODIX_FOD_MMI|MSM_CAMERA_CCI|MAC80211_RC_MINSTREL|CCI_INTF|DRM_PANEL_NOTIFIER)" ../out/.config
 

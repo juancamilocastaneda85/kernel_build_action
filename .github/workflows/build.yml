@@ -86,6 +86,8 @@ jobs:
           ./scripts/config --file ../out/.config --disable CONFIG_I2C_QCOM_GENI
           ./scripts/config --file ../out/.config --disable CONFIG_TOUCHSCREEN_CHIPONE_TDDI_V2_MMI
           ./scripts/config --file ../out/.config --disable CONFIG_TOUCHSCREEN_ILITEK_V3_MMI
+          ./scripts/config --file ../out/.config --disable CONFIG_MMI_SMBCHARGER_IIO
+          ./scripts/config --file ../out/.config --disable CONFIG_STMMAC_ETH
           yes "1" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel

@@ -25,7 +25,7 @@ jobs:
       - name: Download clang-r416183b
         run: |
           mkdir -p clang
-          wget -q https://github.com/MiCodeX/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/archive/refs/heads/master.tar.gz -O clang.tar.gz
+          wget -q https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/archive/refs/heads/lineage-23.2.tar.gz -O clang.tar.gz
           tar -xf clang.tar.gz -C clang --strip-components=1
           rm clang.tar.gz
 

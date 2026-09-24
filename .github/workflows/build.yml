@@ -50,6 +50,7 @@ jobs:
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file ../out/.config --disable CONFIG_MODULE_REL_CRCS
           ./scripts/config --file ../out/.config --disable CONFIG_KSU
+          ./scripts/config --file ../out/.config --set-val CONFIG_FRAME_WARN 0
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "1" | make ARCH=arm64 O=../out olddefconfig
@@ -65,6 +66,7 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
+            KCFLAGS="-Wno-frame-larger-than" \
             Image modules
 
       - name: Upload artifacts

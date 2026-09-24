@@ -50,7 +50,10 @@ jobs:
           sed -i 's/static const u32 gpll0_a53cc_map\[\] = {/static const struct parent_map gpll0_a53cc_map[] = {/' drivers/clk/qcom/apcs-msm8916.c
           sed -i '/rc80211_minstrel\.o/d' net/mac80211/Makefile
           sed -i '/^enum {/a \	P_XO,\n\tP_GPLL0_OUT_AUX,' drivers/clk/qcom/gcc-qcs404.c
-          sed -i 's/qrtr_endpoint_register(&tun->ep, QRTR_EP_NET_ID_AUTO, 0)/qrtr_endpoint_register(\&tun->ep, QRTR_EP_NET_ID_AUTO, false, THIS_MODULE)/' net/qrtr/tun.c
+          sed -i 's/qrtr_endpoint_register(&tun->ep, QRTR_EP_NET_ID_AUTO, false, THIS_MODULE)/qrtr_endpoint_register(\&tun->ep, QRTR_EP_NET_ID_AUTO, false, NULL)/' net/qrtr/tun.c
+          sed -i '1i #include <linux/fb.h>' drivers/input/touchscreen/chipone_tddi_v2_mmi/cts_driver.c
+          sed -i 's/gi2c->base/gi2c->se.base/g' drivers/i2c/busses/i2c-qcom-geni.c
+          sed -i '1i #include <linux/soc/qcom/geni-se.h>' drivers/i2c/busses/i2c-qcom-geni.c
 
           echo "Kernel source patched."
 

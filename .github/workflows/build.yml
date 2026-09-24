@@ -13,8 +13,8 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          repository: SushiKernel/android_kernel_motorola_fogos_nah
-          ref: seventeen
+          repository: LineageOS/android_kernel_motorola_sm6375
+          ref: lineage-23.2
           path: kernel
 
       - name: Install dependencies
@@ -29,33 +29,12 @@ jobs:
           tar -xf clang.tar.gz -C clang
           rm clang.tar.gz
 
-      - name: Fix pgtable.h include
-        run: |
-          cd kernel
-          find drivers/staging/rksu -name "*.c" -o -name "*.h" | xargs grep -l "linux/pgtable.h" 2>/dev/null | while read f; do
-            sed -i 's|#include <linux/pgtable.h>|#include <asm/pgtable.h>|g' "$f"
-          done
-          echo "Fixed pgtable.h includes"
-
-      - name: Create fs1815 Makefile
-        run: |
-          cd kernel
-          if [ ! -f techpack/audio/asoc/codecs/fs1815/Makefile ]; then
-            cat > techpack/audio/asoc/codecs/fs1815/Makefile << 'EOF'
-          # SPDX-License-Identifier: GPL-2.0-only
-          snd-soc-fs1815-objs := fs1815.o fsm_core.o fsm_firmware.o fsm_i2c.o fsm_misc.o
-          obj-$(CONFIG_SND_SOC_FS1815) += snd-soc-fs1815.o
-          EOF
-            echo "Created fs1815 Makefile"
-          else
-            echo "fs1815 Makefile already exists"
-          fi
-
       - name: Configure kernel
         run: |
           cd kernel
           mkdir -p ../out
-          cp ../fogos_real_config ../out/.config
+          make ARCH=arm64 O=../out defconfig
+          cat arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config >> ../out/.config
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --disable CONFIG_LTO
@@ -71,8 +50,6 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_SCHED_CASS
           ./scripts/config --file ../out/.config --enable CONFIG_SND_SOC_FS1815
           ./scripts/config --file ../out/.config --enable CONFIG_SND_SOC_FS1815_DLKM
-          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG
-          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG_SHADOW
           yes "1" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel
@@ -86,7 +63,6 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
-            KCFLAGS="-fsanitize=cfi" \
             Image modules
 
       - name: Upload artifacts

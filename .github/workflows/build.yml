@@ -29,6 +29,14 @@ jobs:
           tar -xf clang.tar.gz -C clang
           rm clang.tar.gz
 
+      - name: Fix pgtable.h include
+        run: |
+          cd kernel
+          find drivers/staging/rksu -name "*.c" -o -name "*.h" | xargs grep -l "linux/pgtable.h" 2>/dev/null | while read f; do
+            sed -i 's|#include <linux/pgtable.h>|#include <asm/pgtable.h>|g' "$f"
+          done
+          echo "Fixed pgtable.h includes"
+
       - name: Configure kernel
         run: |
           cd kernel
@@ -41,6 +49,7 @@ jobs:
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file ../out/.config --disable CONFIG_MODULE_REL_CRCS
+          ./scripts/config --file ../out/.config --disable CONFIG_KSU
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "1" | make ARCH=arm64 O=../out olddefconfig

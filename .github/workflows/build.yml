@@ -85,23 +85,31 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
-          ./scripts/config --file ../out/.config --disable CONFIG_I2C_QCOM_GENI
-          ./scripts/config --file ../out/.config --disable CONFIG_TOUCHSCREEN_CHIPONE_TDDI_V2_MMI
-          ./scripts/config --file ../out/.config --disable CONFIG_TOUCHSCREEN_ILITEK_V3_MMI
-          ./scripts/config --file ../out/.config --disable CONFIG_TOUCHSCREEN_SYNAPTICS_DSX
-          ./scripts/config --file ../out/.config --disable CONFIG_GOODIX_FOD_MMI
-          ./scripts/config --file ../out/.config --disable CONFIG_MSM_CAMERA_CCI
-          ./scripts/config --file ../out/.config --disable CONFIG_CCI_INTF
-          ./scripts/config --file ../out/.config --disable CONFIG_SND_SOC_AW882XX
-          ./scripts/config --file ../out/.config --disable CONFIG_SND_SOC_AW882XX_ACF
-          ./scripts/config --file ../out/.config --disable CONFIG_SND_SOC_FS1815
-          ./scripts/config --file ../out/.config --disable CONFIG_SND_SOC_FS1815_DLKM
-          ./scripts/config --file ../out/.config --disable CONFIG_QPNP_ADAPTIVE_CHARGE
-          ./scripts/config --file ../out/.config --disable CONFIG_MMI_SMBCHARGER_IIO
-          ./scripts/config --file ../out/.config --disable CONFIG_MSM_POWEROFF
-          ./scripts/config --file ../out/.config --disable CONFIG_STMMAC_ETH
-          ./scripts/config --file ../out/.config --disable CONFIG_DRM_PANEL_NOTIFIER
+          # Fijar las opciones problemáticas a la fuerza en el .config
+          cat >> ../out/.config << 'EOF'
+          # CONFIG_SND_SOC_AW882XX is not set
+          # CONFIG_SND_SOC_AW882XX_ACF is not set
+          # CONFIG_GOODIX_FOD_MMI is not set
+          # CONFIG_MSM_CAMERA_CCI is not set
+          # CONFIG_CCI_INTF is not set
+          # CONFIG_DRM_PANEL_NOTIFIER is not set
+          # CONFIG_I2C_QCOM_GENI is not set
+          # CONFIG_TOUCHSCREEN_SYNAPTICS_DSX is not set
+          # CONFIG_TOUCHSCREEN_CHIPONE_TDDI_V2_MMI is not set
+          # CONFIG_TOUCHSCREEN_ILITEK_V3_MMI is not set
+          # CONFIG_QPNP_ADAPTIVE_CHARGE is not set
+          # CONFIG_MMI_SMBCHARGER_IIO is not set
+          # CONFIG_MSM_POWEROFF is not set
+          # CONFIG_STMMAC_ETH is not set
+          CONFIG_MAC80211_RC_MINSTREL=y
+          CONFIG_MAC80211_RC_MINSTREL_HT=y
+          EOF
           yes "1" | make ARCH=arm64 O=../out olddefconfig
+
+      - name: Verify .config
+        run: |
+          echo "=== Opciones problemáticas ==="
+          grep -E "CONFIG_(SND_SOC_AW882XX|GOODIX_FOD_MMI|MSM_CAMERA_CCI|MAC80211_RC_MINSTREL|CCI_INTF|DRM_PANEL_NOTIFIER)" ../out/.config
 
       - name: Build kernel
         run: |

@@ -32,6 +32,7 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
+          mkdir -p ../out
           cp ../fogos_real_config ../out/.config
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK

@@ -69,8 +69,8 @@ jobs:
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           ./scripts/config --file ../out/.config --enable CONFIG_SCHED_WALT
           ./scripts/config --file ../out/.config --enable CONFIG_SCHED_CASS
-          ./scripts/config --file ../out/.config --module CONFIG_SND_SOC_FS1815
-          ./scripts/config --file ../out/.config --module CONFIG_SND_SOC_FS1815_DLKM
+          ./scripts/config --file ../out/.config --enable CONFIG_SND_SOC_FS1815
+          ./scripts/config --file ../out/.config --enable CONFIG_SND_SOC_FS1815_DLKM
           yes "1" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel

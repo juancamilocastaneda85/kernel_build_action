@@ -91,6 +91,15 @@ jobs:
           ./scripts/config --file ../out/.config --disable CONFIG_SND_SOC_FS1815
           ./scripts/config --file ../out/.config --disable CONFIG_SND_SOC_FS1815_DLKM
           ./scripts/config --file ../out/.config --enable CONFIG_QCOM_SCM
+          ./scripts/config --file ../out/.config --disable CONFIG_MAC80211
+          ./scripts/config --file ../out/.config --disable CONFIG_MAC80211_RC_MINSTREL
+          ./scripts/config --file ../out/.config --disable CONFIG_MAC80211_RC_MINSTREL_HT
+          ./scripts/config --file ../out/.config --disable CONFIG_SND_SOC_AW882XX
+          ./scripts/config --file ../out/.config --disable CONFIG_SND_SOC_AW882XX_ACF
+          ./scripts/config --file ../out/.config --disable CONFIG_QPNP_ADAPTIVE_CHARGE
+          ./scripts/config --file ../out/.config --disable CONFIG_CCI_INTF
+          ./scripts/config --file ../out/.config --disable CONFIG_GOODIX_FOD_MMI
+          ./scripts/config --file ../out/.config --disable CONFIG_DRM_PANEL_NOTIFIER
           yes "1" | make ARCH=arm64 O=../out olddefconfig
 
       - name: Build kernel

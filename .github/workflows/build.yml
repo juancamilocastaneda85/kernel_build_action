@@ -66,7 +66,6 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
-            KCFLAGS="-Wno-frame-larger-than" \
             Image modules
 
       - name: Upload artifacts

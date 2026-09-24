@@ -85,7 +85,6 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
-          # Desactivar SOLO los drivers problemáticos que NO son WiFi
           ./scripts/config --file ../out/.config --disable CONFIG_I2C_QCOM_GENI
           ./scripts/config --file ../out/.config --disable CONFIG_TOUCHSCREEN_CHIPONE_TDDI_V2_MMI
           ./scripts/config --file ../out/.config --disable CONFIG_TOUCHSCREEN_ILITEK_V3_MMI

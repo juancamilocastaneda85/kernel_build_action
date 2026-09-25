@@ -33,21 +33,26 @@ jobs:
           cd kernel
           D=drivers/net/wireless/mediatek/mt7601u
 
+          # Modo AP
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
+
+          # Quitar trace.o y debugfs.o del Makefile
           sed -i 's/^mt7601u-y.*trace\.o.*$/# PATCH: trace.o excluded/' $D/Makefile
           sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' $D/Makefile
 
+          # Vaciar trace.c y trace.h
           printf '/* PATCH: trace.c empty */\n' > $D/trace.c
           printf '/* PATCH: trace.h empty */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
 
-          printf '\n# PATCH: MT_PHY_TYPE defines\n' >> $D/Makefile
-          printf 'ccflags-y += -DMT_PHY_TYPE_CCK=0\n' >> $D/Makefile
-          printf 'ccflags-y += -DMT_PHY_TYPE_OFDM=1\n' >> $D/Makefile
-          printf 'ccflags-y += -DMT_PHY_TYPE_HT=2\n' >> $D/Makefile
-          printf 'ccflags-y += -DMT_PHY_TYPE_HT_GF=3\n' >> $D/Makefile
+          # Forzar include de mac.h en init.c (para MT_PHY_TYPE_*)
+          printf '\n# PATCH: Forzar include de mac.h en init.c\n' >> $D/Makefile
+          printf 'CFLAGS_init.o := -include $(srctree)/%s/mac.h\n' "$D" >> $D/Makefile
+
+          # Forzar include de mac.h en dma.c (para struct mt7601u_rxwi)
           printf '\n# PATCH: Forzar include de mac.h en dma.c\n' >> $D/Makefile
           printf 'CFLAGS_dma.o := -include $(srctree)/%s/mac.h\n' "$D" >> $D/Makefile
 
+          # Neutralizar macros trace_* en cada .c
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
             FILE=$D/$f
             if [ -f "$FILE" ]; then
@@ -130,9 +135,9 @@ jobs:
           cd kernel
           ls -lh ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep vermagic
-          echo "=== Buscando __tracepoint en el .ko ==="
+          echo "=== __tracepoint en el .ko ==="
           strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "__tracepoint" || echo "0 (ninguno)"
-          echo "=== Buscando debugfs_create en el .ko ==="
+          echo "=== debugfs_create en el .ko ==="
           strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "debugfs_create" || echo "0 (ninguno)"
 
       - name: Upload

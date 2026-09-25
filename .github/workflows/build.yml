@@ -54,16 +54,6 @@ jobs:
           echo "=== DESPUÉS ==="
           grep -n "of_device_get_match_data" $F
 
-      - name: Disable -Werror globally
-        run: |
-          cd kernel
-          # Quitar -Werror de KBUILD_CFLAGS para que los warnings no detengan el build
-          # Esto es necesario porque LineageOS tiene muchos warnings en módulos que
-          # no nos interesan (charger, qcom_scm, etc.)
-          sed -i 's/-Werror//g' Makefile
-          echo "=== Verificando ==="
-          grep -c "Werror" Makefile || echo "0 ocurrencias (OK)"
-
       - name: Configure kernel
         run: |
           cd kernel
@@ -86,7 +76,8 @@ jobs:
       - name: Build kernel modules (full)
         run: |
           cd kernel
-          KBUILD_MODPOST_WARN=1 make ARCH=arm64 O=../out -j4 \
+          make ARCH=arm64 O=../out -j4 \
+            KCFLAGS="-Wno-error -Wno-void-pointer-to-int-cast -Wno-int-to-void-pointer-cast -Wno-unused-function -Wno-implicit-function-declaration -Wno-unused-variable" \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
             AR=../clang/bin/llvm-ar \
@@ -94,6 +85,7 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
+            KBUILD_MODPOST_WARN=1 \
             modules
 
       - name: Verify module

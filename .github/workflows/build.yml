@@ -35,13 +35,13 @@ jobs:
           echo "===== init.c: interface_modes ====="
           grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c
           echo ""
-          echo "===== trace.h: últimas 10 líneas ====="
-          tail -10 drivers/net/wireless/mediatek/mt7601u/trace.h
+          echo "===== trace_* usados en .c ====="
+          grep -rhoE "trace_[a-z_]+\(" drivers/net/wireless/mediatek/mt7601u/*.c | sort -u
           echo ""
-          echo "===== trace.c: primeras 20 líneas ====="
-          head -20 drivers/net/wireless/mediatek/mt7601u/trace.c
+          echo "===== debugfs_* usados ====="
+          grep -rhoE "mt7601u_debugfs_[a-z_]+\(" drivers/net/wireless/mediatek/mt7601u/*.c | sort -u
 
-      - name: Patch Kernel Source (AP Mode + trace fix v3)
+      - name: Patch Kernel Source (AP Mode + trace + debugfs removal)
         run: |
           cd kernel
 
@@ -51,28 +51,69 @@ jobs:
             sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
             echo "=== Parche AP aplicado ==="
           fi
-          grep -n "interface_modes" "$F"
           
-          # === Parche 2: eliminar includes problemáticos de trace.h ===
+          # === Parche 2: vaciar trace.h y trace.c ===
           T=drivers/net/wireless/mediatek/mt7601u/trace.h
-          
-          echo ""
-          echo "=== trace.h: últimas 15 líneas ANTES ==="
-          tail -15 "$T"
-          
-          sed -i '/#include <trace\/define_trace.h>/d' "$T"
-          sed -i '/#include "trace.h"/d' "$T"
-          
-          echo ""
-          echo "=== trace.h: últimas 15 líneas DESPUÉS ==="
-          tail -15 "$T"
-          
-          # === Parche 3: neutralizar trace.c ===
           C=drivers/net/wireless/mediatek/mt7601u/trace.c
-          cat > "$C" << 'TRACE_C_EOF'
-          /* PATCH: trace.c neutralizado - tracing deshabilitado para build standalone */
-          TRACE_C_EOF
-          echo "=== trace.c neutralizado ==="
+          
+          cat > "$T" << 'EOF'
+/* PATCH: trace.h vacío */
+#ifndef __MT7601U_TRACE_H
+#define __MT7601U_TRACE_H
+#endif
+EOF
+          
+          echo "/* PATCH: trace.c vacío */" > "$C"
+          
+          # === Parche 3: eliminar debugfs del Makefile ===
+          M=drivers/net/wireless/mediatek/mt7601u/Makefile
+          sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' "$M"
+          
+          # === Parche 4: neutralizar trace_* en cada .c ===
+          for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c debugfs.c; do
+            FILE=drivers/net/wireless/mediatek/mt7601u/$f
+            if [ -f "$FILE" ]; then
+              sed -i '1i\
+/* PATCH-TRACE: neutralizar todas las macros trace_* */\
+#define trace_mt_mcu_msg_send(...) do {} while (0)\
+#define trace_mt_mcu_msg_send_cs(...) do {} while (0)\
+#define trace_mt_submit_urb_sync(...) do {} while (0)\
+#define trace_mt_submit_urb(...) do {} while (0)\
+#define trace_mt_vend_req(...) do {} while (0)\
+#define trace_reg_read(...) do {} while (0)\
+#define trace_reg_write(...) do {} while (0)\
+#define trace_mt_rx(...) do {} while (0)\
+#define trace_mt_tx(...) do {} while (0)\
+#define trace_mt_tx_status_cleaned(...) do {} while (0)\
+#define trace_mt_rx_dma_aggr(...) do {} while (0)\
+#define trace_mt_tx_dma_done(...) do {} while (0)\
+#define trace_mt_bbp_read(...) do {} while (0)\
+#define trace_mt_bbp_write(...) do {} while (0)\
+#define trace_mt_freq_cal_adjust(...) do {} while (0)\
+#define trace_mt_freq_cal_offset(...) do {} while (0)\
+#define trace_mt_read_temp(...) do {} while (0)\
+#define trace_mt_rf_read(...) do {} while (0)\
+#define trace_mt_rf_write(...) do {} while (0)\
+#define trace_mt_temp_mode(...) do {} while (0)\
+#define trace_mt_set_key(...) do {} while (0)\
+#define trace_mt_set_shared_key(...) do {} while (0)' "$FILE"
+            fi
+          done
+          echo "=== trace_* neutralizados en todos los .c ==="
+          
+          # === Parche 5: neutralizar debugfs en main.c ===
+          if [ -f "drivers/net/wireless/mediatek/mt7601u/main.c" ]; then
+            sed -i -E 's/(mt7601u_debugfs_init|mt7601u_debugfs_remove|mt7601u_debugfs_register)/\/\* PATCH-DEBUGFS: \1 \*\//g' drivers/net/wireless/mediatek/mt7601u/main.c
+            echo "=== debugfs neutralizado en main.c ==="
+          fi
+          
+          echo ""
+          echo "=== Makefile final ==="
+          cat "$M"
+          
+          echo ""
+          echo "=== Verificación trace_ restantes ==="
+          grep -rn "trace_" drivers/net/wireless/mediatek/mt7601u/*.c | grep -v "PATCH-TRACE" | grep -v "^.*:1:" | head -5 || echo "(todas neutralizadas)"
 
       - name: Prepare Kernel Config
         run: |

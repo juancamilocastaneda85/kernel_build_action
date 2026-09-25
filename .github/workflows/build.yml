@@ -38,10 +38,10 @@ jobs:
           echo "===== Makefile del mt7601u ====="
           cat drivers/net/wireless/mediatek/mt7601u/Makefile
           echo ""
-          echo "===== Versión del kernel ====="
-          head -5 Makefile | grep -E "VERSION|PATCHLEVEL|SUBLEVEL"
+          echo "===== Archivos que incluyen trace.h ====="
+          grep -rn '#include "trace.h"' drivers/net/wireless/mediatek/mt7601u/ || echo "(ninguno)"
 
-      - name: Patch Kernel Source (AP Mode + trace fix)
+      - name: Patch Kernel Source (AP Mode + trace neutralizado)
         run: |
           cd kernel
 
@@ -52,23 +52,33 @@ jobs:
             sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
             echo "=== Parche AP aplicado ==="
           else
-            echo "=== Parche AP ya estaba o no se encontró ==="
-          fi
-          
-          grep -n "interface_modes" "$F"
-          
-          # === Parche 2: fix del Makefile para trace.o ===
-          M=drivers/net/wireless/mediatek/mt7601u/Makefile
-          if [ -f "$M" ] && ! grep -q "CFLAGS_trace.o" "$M"; then
-            echo "" >> "$M"
-            echo "# PATCH: fix trace.h include path when building standalone" >> "$M"
-            echo "CFLAGS_trace.o := -I\$(src)" >> "$M"
-            echo "=== Fix trace.o aplicado ==="
+            echo "=== Parche AP no aplicado (línea no encontrada) ==="
           fi
           
           echo ""
-          echo "=== Makefile del mt7601u tras el parche ==="
-          cat "$M"
+          echo "=== Verificación parche AP ==="
+          grep -n "interface_modes" "$F"
+          
+          # === Parche 2: neutralizar trace.h y trace.c ===
+          T=drivers/net/wireless/mediatek/mt7601u/trace.h
+          C=drivers/net/wireless/mediatek/mt7601u/trace.c
+          
+          if [ -f "$T" ]; then
+            echo "/* PATCH: trace.h neutralizado para build standalone */" > "$T"
+            echo "#ifndef _MT7601U_TRACE_H" >> "$T"
+            echo "#define _MT7601U_TRACE_H" >> "$T"
+            echo "#endif" >> "$T"
+            echo "=== trace.h neutralizado ==="
+          fi
+          
+          if [ -f "$C" ]; then
+            echo "/* PATCH: trace.c neutralizado */" > "$C"
+            echo "=== trace.c neutralizado ==="
+          fi
+          
+          echo ""
+          echo "=== Makefile del mt7601u (final) ==="
+          cat drivers/net/wireless/mediatek/mt7601u/Makefile
 
       - name: Prepare Kernel Config
         run: |
@@ -76,10 +86,9 @@ jobs:
           mkdir -p ../out
           
           if [ -f "arch/arm64/configs/vendor/holi-qgki_defconfig" ]; then
-            echo "=== Usando vendor/holi-qgki_defconfig ==="
             make ARCH=arm64 O=../out vendor/holi-qgki_defconfig
           else
-            echo "=== ERROR: no se encontró holi-qgki_defconfig ==="
+            echo "ERROR: holi-qgki_defconfig no encontrado"
             exit 1
           fi
           
@@ -88,7 +97,6 @@ jobs:
             arch/arm64/configs/vendor/holi_consolidate.config \
             arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config; do
             if [ -f "$fragment" ]; then
-              echo "=== Aplicando fragmento: $fragment ==="
               cat "$fragment" >> ../out/.config
             fi
           done
@@ -104,10 +112,8 @@ jobs:
           ./scripts/config --file $CONFIG --disable CONFIG_LOCALVERSION_AUTO
           ./scripts/config --file $CONFIG --enable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG --enable CONFIG_MODULE_FORCE_LOAD
-          
           ./scripts/config --file $CONFIG --module CONFIG_MT7601U
           ./scripts/config --file $CONFIG --enable CONFIG_WLAN_VENDOR_MEDIATEK
-          
           ./scripts/config --file $CONFIG --enable CONFIG_CFG80211
           ./scripts/config --file $CONFIG --enable CONFIG_MAC80211
           ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL
@@ -115,7 +121,6 @@ jobs:
           
           yes "" | make ARCH=arm64 O=../out olddefconfig
           
-          echo "=== Configuración final ==="
           grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD)" $CONFIG
 
       - name: Build MT7601U module
@@ -155,18 +160,14 @@ jobs:
             echo "=== ¡MÓDULO COMPILADO! ==="
             ls -lh "$KO"
             echo ""
-            echo "=== Vermagic del módulo ==="
+            echo "=== Vermagic ==="
             modinfo "$KO" | grep vermagic || true
             echo ""
-            echo "=== Información del módulo ==="
+            echo "=== Info ==="
             modinfo "$KO" | head -15 || true
             echo ""
-            echo "=== Modo AP en el .ko ==="
-            if strings "$KO" | grep -q "NL80211_IFTYPE_AP"; then
-              echo "=== MODO AP PRESENTE ==="
-            else
-              echo "=== ALERTA: Modo AP NO detectado ==="
-            fi
+            echo "=== Modo AP ==="
+            strings "$KO" | grep -q "NL80211_IFTYPE_AP" && echo "=== MODO AP PRESENTE ===" || echo "=== ALERTA: Modo AP NO detectado ==="
           else
             echo "=== ERROR: mt7601u.ko NO se generó ==="
             find ../out -name "*.ko" 2>/dev/null | head -20

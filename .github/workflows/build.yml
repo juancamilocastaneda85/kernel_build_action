@@ -17,6 +17,18 @@ jobs:
           ref: lineage-23.2
           path: kernel
 
+      - name: Diagnóstico previo (dump archivos clave)
+        run: |
+          cd kernel
+          echo "########## net/mac80211/Makefile — COMPLETO ##########"
+          cat -A net/mac80211/Makefile | head -80
+          echo ""
+          echo "########## Archivos minstrel en net/mac80211/ ##########"
+          ls -la net/mac80211/rc80211_minstrel* || echo "(no hay archivos)"
+          echo ""
+          echo "########## i2c-qcom-geni.c: línea con geni_write_reg ##########"
+          grep -n "geni_write_reg" drivers/i2c/busses/i2c-qcom-geni.c || echo "(no encontrado)"
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -63,31 +75,31 @@ jobs:
           sed -i '1i #include <linux/fb.h>' drivers/input/touchscreen/chipone_tddi_v2_mmi/cts_driver.c
           sed -i '1i #ifndef FB_EARLY_EVENT_BLANK\n#define FB_EARLY_EVENT_BLANK 0x10\n#endif' drivers/input/touchscreen/chipone_tddi_v2_mmi/cts_driver.c
 
-          # 7. i2c-qcom-geni.c — FIX DEFINITIVO
+          # 7. i2c-qcom-geni.c — FIX v3 (firma 3 args)
           F=drivers/i2c/busses/i2c-qcom-geni.c
-          # 7a. gi2c->base -> gi2c->se.base (solo en la llamada a geni_write_reg)
           sed -i 's/gi2c->noise_rjct_sda << 3, gi2c->base,/gi2c->noise_rjct_sda << 3, gi2c->se.base,/' "$F"
-          # 7b. inyectar definición tras el último #include
           if ! grep -q "static inline void geni_write_reg" "$F"; then
             LINE=$(grep -n "^#include" "$F" | tail -1 | cut -d: -f1)
             sed -i "${LINE}a\\
           \\
-          /* PATCH: geni_write_reg missing in this tree */\\
-          static inline void geni_write_reg(u32 val, void __iomem *base)\\
+          /* PATCH: geni_write_reg missing (3-arg version) */\\
+          static inline void geni_write_reg(u32 val, void __iomem *base, u32 offset)\\
           {\\
-              writel_relaxed(val, base);\\
+              writel_relaxed(val, base + offset);\\
           }" "$F"
           fi
           echo "=== Verificación i2c-qcom-geni ==="
-          grep -n "geni_write_reg\|gi2c->base" "$F" || echo "(sin gi2c->base, OK)"
+          grep -n "geni_write_reg\|gi2c->base" "$F" || echo "(nada)"
 
-          # 8. mac80211 — eliminar rc80211_minstrel.o duplicado
+          # 8. mac80211 — deshabilitar rc80211_minstrel.o sin importar formato
           M=net/mac80211/Makefile
-          sed -i '/^mac80211-y += rc80211_minstrel\.o$/d' "$M"
-          sed -i '/^rc80211_minstrel-y\s*:=\s*rc80211_minstrel_ht\.o/d' "$M"
-          sed -i '/^rc80211_minstrel-$(CONFIG_MAC80211_RC_MINSTREL)\s*:=\s*rc80211_minstrel_ht\.o/d' "$M"
-          echo "=== mac80211 Makefile tras patch ==="
-          grep -n "minstrel" "$M" || echo "(sin minstrel — ¡ojo! revisar)"
+          sed -i '/rc80211_minstrel\.o/{
+            /rc80211_minstrel_ht\.o/!s/^/# PATCH-DISABLED: /
+          }' "$M"
+          echo "=== mac80211 Makefile (después del patch) ==="
+          grep -n "minstrel" "$M" || echo "(sin minstrel — ALERTA)"
+          echo "=== Líneas deshabilitadas ==="
+          grep -n "PATCH-DISABLED" "$M" || echo "(ninguna)"
 
           # 9. fb.h global
           sed -i '/^#define FB_EVENT_BLANK/a #ifndef FB_EARLY_EVENT_BLANK\n#define FB_EARLY_EVENT_BLANK  0x10\n#endif' include/linux/fb.h
@@ -101,7 +113,6 @@ jobs:
           make ARCH=arm64 O=../out defconfig
           cat arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config >> ../out/.config || true
 
-          # WiFi / antena: NO TOCAR
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
@@ -109,7 +120,6 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
           ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
 
-          # Quitar lo que molesta
           ./scripts/config --file ../out/.config --disable CONFIG_LTO
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_THIN
@@ -134,8 +144,6 @@ jobs:
           cd kernel
           echo "=== WiFi / antena ==="
           grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|MAC80211|MAC80211_RC_MINSTREL|CFG80211)" ../out/.config || echo "!!! FALTA WIFI !!!"
-          echo ""
-          echo "=== Verify OK ==="
           exit 0
 
       - name: Build kernel
@@ -154,10 +162,10 @@ jobs:
       - name: Collect .ko files
         run: |
           mkdir -p ko_output
-          find out -name "mt7601u.ko" -exec cp {} ko_output/ \;
+          find out -name "mt7601u.ko" -exec cp {} ko_output/ \; || true
           find out -name "mac80211.ko" -exec cp {} ko_output/ \; || true
           find out -name "cfg80211.ko" -exec cp {} ko_output/ \; || true
-          ls -lh ko_output/
+          ls -lh ko_output/ || echo "(ningún .ko generado)"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

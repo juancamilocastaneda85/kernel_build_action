@@ -38,8 +38,11 @@ jobs:
           echo "===== Versión del kernel ====="
           head -5 Makefile | grep -E "VERSION|PATCHLEVEL|SUBLEVEL"
           echo ""
-          echo "===== Contenido del .config viejo del repo (si existe) ====="
-          ls -la ../*.config ../config* 2>/dev/null || echo "(no hay config en la raíz del repo)"
+          echo "===== Defconfigs disponibles para holi ====="
+          find arch/arm64/configs -iname "*holi*" 2>/dev/null
+          echo ""
+          echo "===== Config files en la raíz del repo ====="
+          ls -la ../*.txt ../.config ../config* 2>/dev/null || echo "(no hay config en raíz del repo)"
 
       - name: Patch Kernel Source (AP Mode)
         run: |
@@ -67,31 +70,40 @@ jobs:
           cd kernel
           mkdir -p ../out
           
-          # Buscar cualquier archivo de config que exista en la raíz del repo
-          CONFIG_FOUND=""
-          for f in ../config_real.txt ../.config ../config ../*.config; do
-            if [ -f "$f" ]; then
-              echo "=== Encontrado: $f ==="
-              CONFIG_FOUND="$f"
-              break
+          echo "===== Generando .config desde defconfig oficial de LineageOS ====="
+          
+          # Defconfig base correcto para holi (sm6375)
+          if [ -f "arch/arm64/configs/vendor/holi-qgki_defconfig" ]; then
+            echo "=== Usando vendor/holi-qgki_defconfig ==="
+            make ARCH=arm64 O=../out vendor/holi-qgki_defconfig
+          else
+            echo "=== ERROR: no se encontró holi-qgki_defconfig ==="
+            ls arch/arm64/configs/vendor/ | grep -i holi
+            exit 1
+          fi
+          
+          # Aplicar fragmentos adicionales
+          for fragment in \
+            arch/arm64/configs/vendor/holi_GKI.config \
+            arch/arm64/configs/vendor/holi_consolidate.config \
+            arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config; do
+            if [ -f "$fragment" ]; then
+              echo "=== Aplicando fragmento: $fragment ==="
+              cat "$fragment" >> ../out/.config
             fi
           done
           
-          if [ -n "$CONFIG_FOUND" ]; then
-            cp "$CONFIG_FOUND" ../out/.config
-            echo "=== Usando $CONFIG_FOUND como base ==="
-          else
-            echo "=== No se encontró config. Generando desde defconfig ==="
-            make ARCH=arm64 O=../out holi_defconfig
-          fi
+          echo ""
+          echo "===== Verificando que el .config se creó ====="
+          wc -l ../out/.config
 
       - name: Configure Kernel (forzar valores críticos)
         run: |
           cd kernel
           CONFIG=../out/.config
           
-          echo "=== ANTES de los ajustes ==="
-          grep -E "CONFIG_(LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD|MT7601U)" $CONFIG || echo "(no estaban seteados)"
+          echo "=== ANTES de los ajustes (valores clave) ==="
+          grep -E "CONFIG_(LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD|MT7601U|WLAN_VENDOR_MEDIATEK)" $CONFIG || echo "(ninguno seteado todavía)"
           
           # === FORZAR valores críticos para alinear con el kernel real ===
           ./scripts/config --file $CONFIG --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
@@ -109,7 +121,7 @@ jobs:
           ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL
           ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL_HT
           
-          # === Aplicar cambios ===
+          # === Aplicar cambios (resolver dependencias) ===
           yes "" | make ARCH=arm64 O=../out olddefconfig
           
           echo ""
@@ -120,6 +132,7 @@ jobs:
         run: |
           cd kernel
           
+          echo "=== Compilando mt7601u.ko ==="
           KBUILD_MODPOST_WARN=1 make ARCH=arm64 O=../out -j4 \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
@@ -147,10 +160,18 @@ jobs:
             modinfo "$KO" | head -15 || true
             echo ""
             echo "=== Verificar modo AP en el .ko ==="
-            strings "$KO" | grep -i "NL80211_IFTYPE_AP" && echo "=== MODO AP PRESENTE ===" || echo "=== ALERTA: Modo AP NO detectado ==="
+            if strings "$KO" | grep -q "NL80211_IFTYPE_AP"; then
+              echo "=== MODO AP PRESENTE ==="
+            else
+              echo "=== ALERTA: Modo AP NO detectado en el binario ==="
+            fi
           else
             echo "=== ERROR: mt7601u.ko NO se generó ==="
+            echo "=== Buscando .ko en el output ==="
             find ../out -name "*.ko" 2>/dev/null | head -20
+            echo ""
+            echo "=== Buscando errores en el build ==="
+            find ../out -name "*.log" 2>/dev/null | head -5
             exit 1
           fi
 

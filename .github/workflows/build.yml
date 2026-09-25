@@ -37,63 +37,56 @@ jobs:
         run: |
           cd kernel
           D=drivers/net/wireless/mediatek/mt7601u
-          
+
           printf '/* PATCH: trace.h vacio */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
           echo '/* PATCH: trace.c vacio */' > $D/trace.c
-          
+
           if ! grep -q "PATCH_PHY_TYPES" $D/init.c; then
             printf '/* PATCH_PHY_TYPES */\n#ifndef MT_PHY_TYPE_CCK\n#define MT_PHY_TYPE_CCK 0\n#endif\n#ifndef MT_PHY_TYPE_OFDM\n#define MT_PHY_TYPE_OFDM 1\n#endif\n#ifndef MT_PHY_TYPE_HT\n#define MT_PHY_TYPE_HT 2\n#endif\n#ifndef MT_PHY_TYPE_HT_GF\n#define MT_PHY_TYPE_HT_GF 3\n#endif\n' > /tmp/phy_types.h
             cat /tmp/phy_types.h $D/init.c > /tmp/init_new.c
             mv /tmp/init_new.c $D/init.c
           fi
-          
+
           if ! grep -q "PATCH_MAC_INCLUDES" $D/mac.h; then
             printf '/* PATCH_MAC_INCLUDES */\n#include <linux/types.h>\n#include <linux/skbuff.h>\n#include <linux/ieee80211.h>\n#include "mt7601u.h"\n' > /tmp/mac_includes.h
             cat /tmp/mac_includes.h $D/mac.h > /tmp/mac_new.h
             mv /tmp/mac_new.h $D/mac.h
           fi
-          
-          # Neutralizar trace_* con heredoc (evita problemas de escape)
+
+          printf '%s\n' \
+            '/* PATCH-TRACE */' \
+            '#define trace_mt_mcu_msg_send(...) do {} while (0)' \
+            '#define trace_mt_submit_urb_sync(...) do {} while (0)' \
+            '#define trace_mt_submit_urb(...) do {} while (0)' \
+            '#define trace_mt_vend_req(...) do {} while (0)' \
+            '#define trace_reg_read(...) do {} while (0)' \
+            '#define trace_reg_write(...) do {} while (0)' \
+            '#define trace_mt_rx(...) do {} while (0)' \
+            '#define trace_mt_tx(...) do {} while (0)' \
+            '#define trace_mt_tx_status_cleaned(...) do {} while (0)' \
+            '#define trace_mt_rx_dma_aggr(...) do {} while (0)' \
+            '#define trace_mt_tx_dma_done(...) do {} while (0)' \
+            '#define trace_mt_bbp_read(...) do {} while (0)' \
+            '#define trace_mt_bbp_write(...) do {} while (0)' \
+            '#define trace_mt_freq_cal_adjust(...) do {} while (0)' \
+            '#define trace_mt_freq_cal_offset(...) do {} while (0)' \
+            '#define trace_mt_read_temp(...) do {} while (0)' \
+            '#define trace_mt_rf_read(...) do {} while (0)' \
+            '#define trace_mt_rf_write(...) do {} while (0)' \
+            '#define trace_mt_temp_mode(...) do {} while (0)' \
+            '#define trace_mt_set_key(...) do {} while (0)' \
+            '#define trace_mt_set_shared_key(...) do {} while (0)' \
+            > /tmp/patch_header.txt
+
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
             FILE=$D/$f
-            if [ -f "$FILE" ]; then
-              if grep -q "PATCH-TRACE" "$FILE"; then
-                echo "$f ya parcheado"
-                continue
-              fi
-              
-              cat > /tmp/patch_header.txt << 'EOF'
-/* PATCH-TRACE */
-#define trace_mt_mcu_msg_send(...) do {} while (0)
-#define trace_mt_submit_urb_sync(...) do {} while (0)
-#define trace_mt_submit_urb(...) do {} while (0)
-#define trace_mt_vend_req(...) do {} while (0)
-#define trace_reg_read(...) do {} while (0)
-#define trace_reg_write(...) do {} while (0)
-#define trace_mt_rx(...) do {} while (0)
-#define trace_mt_tx(...) do {} while (0)
-#define trace_mt_tx_status_cleaned(...) do {} while (0)
-#define trace_mt_rx_dma_aggr(...) do {} while (0)
-#define trace_mt_tx_dma_done(...) do {} while (0)
-#define trace_mt_bbp_read(...) do {} while (0)
-#define trace_mt_bbp_write(...) do {} while (0)
-#define trace_mt_freq_cal_adjust(...) do {} while (0)
-#define trace_mt_freq_cal_offset(...) do {} while (0)
-#define trace_mt_read_temp(...) do {} while (0)
-#define trace_mt_rf_read(...) do {} while (0)
-#define trace_mt_rf_write(...) do {} while (0)
-#define trace_mt_temp_mode(...) do {} while (0)
-#define trace_mt_set_key(...) do {} while (0)
-#define trace_mt_set_shared_key(...) do {} while (0)
-EOF
-              
+            if [ -f "$FILE" ] && ! grep -q "PATCH-TRACE" "$FILE"; then
               cat /tmp/patch_header.txt "$FILE" > "/tmp/${f}.new"
               mv "/tmp/${f}.new" "$FILE"
               echo "$f parcheado"
             fi
           done
-          
-          echo ""
+
           echo "=== Verificación ==="
           echo "--- dma.c primeras 3 líneas ---"
           head -3 $D/dma.c
@@ -123,7 +116,6 @@ EOF
       - name: Build only mt7601u
         run: |
           cd kernel
-          
           echo "=== modules_prepare ==="
           make ARCH=arm64 O=../out -j4 \
             KCFLAGS="-Wno-error" \
@@ -135,7 +127,6 @@ EOF
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
             modules_prepare
-          
           echo "=== Compilando mt7601u ==="
           make ARCH=arm64 O=../out -j4 \
             KCFLAGS="-Wno-error" \
@@ -149,7 +140,6 @@ EOF
             KBUILD_MODPOST_WARN=1 \
             M=drivers/net/wireless/mediatek/mt7601u \
             modules
-          
           echo "=== Buscando mt7601u.ko ==="
           find ../out -name "mt7601u.ko" -ls
 

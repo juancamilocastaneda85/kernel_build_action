@@ -76,7 +76,7 @@ jobs:
             fi
           done
 
-      - name: Configure kernel (sin MMI problemáticos)
+      - name: Configure kernel (sin MMI problemáticos, CON QCOM_SMEM)
         run: |
           cd kernel
           mkdir -p ../out
@@ -87,7 +87,6 @@ jobs:
             MSM_SERVICE_NOTIFIER \
             QCOM_RPMH \
             QCOM_RPMHPD \
-            QCOM_SMEM \
             QCOM_MEMORY_DUMP_V2 \
             QCOM_MINIDUMP \
             QCOM_MINIDUMP_FTRACE \
@@ -100,6 +99,7 @@ jobs:
             MSM_RPM_SMD ; do
             ./scripts/config --file ../out/.config --disable CONFIG_$opt
           done
+          ./scripts/config --file ../out/.config --enable CONFIG_QCOM_SMEM
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
@@ -110,12 +110,11 @@ jobs:
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "" | make ARCH=arm64 O=../out olddefconfig
           echo "=== Config final ==="
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|MSM_PIL|QCOM_RPMH|QCOM_SMEM)" ../out/.config
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|QCOM_SMEM|MSM_PIL|QCOM_RPMH)" ../out/.config
 
-      - name: Build full kernel modules (con modpost)
+      - name: Build full kernel modules
         run: |
           cd kernel
-          echo "=== Compilando TODO el kernel (con modpost estricto) ==="
           make ARCH=arm64 O=../out -j4 \
             KCFLAGS="-Wno-error" \
             CC=../clang/bin/clang \
@@ -127,16 +126,11 @@ jobs:
             STRIP=../clang/bin/llvm-strip \
             modules
           echo ""
-          echo "=== ¿mt7601u.ko generado? ==="
-          ls -la ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
-          echo ""
           echo "=== DEPENDS del mt7601u.ko ==="
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i "depends"
-          echo ""
           echo "=== VERMAGIC ==="
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i vermagic
-          echo ""
-          echo "=== ALIASES USB ==="
+          echo "=== ALIASES ==="
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i "alias=usb" | head -3
 
       - name: Copy mt7601u.ko

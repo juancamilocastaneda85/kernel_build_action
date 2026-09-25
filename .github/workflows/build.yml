@@ -44,14 +44,13 @@ jobs:
           printf '/* PATCH: trace.c empty */\n' > $D/trace.c
           printf '/* PATCH: trace.h empty */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
 
-          # Añadir TODOS los includes necesarios a mac.h
-          if ! grep -q "PATCH_MAC_INCLUDES" $D/mac.h; then
-            printf '/* PATCH_MAC_INCLUDES */\n#include <linux/types.h>\n#include <linux/skbuff.h>\n#include <linux/ieee80211.h>\n#include "mt7601u.h"\n' > /tmp/mac_includes.h
-            cat /tmp/mac_includes.h $D/mac.h > /tmp/new_mac.h
-            mv /tmp/new_mac.h $D/mac.h
-          fi
+          # Crear header paraguas que incluye TODO en orden correcto
+          printf '#ifndef __MT7601U_UMBRELLA_H\n#define __MT7601U_UMBRELLA_H\n#include <linux/types.h>\n#include <linux/kernel.h>\n#include <linux/skbuff.h>\n#include <linux/ieee80211.h>\n#include "mt7601u.h"\n#include "mac.h"\n#endif\n' > $D/mt7601u_umbrella.h
 
-          # NO tocar init.c ni dma.c (ya incluyen mac.h por su cuenta)
+          # Forzar el paraguas en init.c y dma.c (vía Makefile)
+          printf '\n# PATCH: umbrella header para init.c y dma.c\n' >> $D/Makefile
+          printf 'CFLAGS_init.o := -include $(srctree)/%s/mt7601u_umbrella.h\n' "$D" >> $D/Makefile
+          printf 'CFLAGS_dma.o := -include $(srctree)/%s/mt7601u_umbrella.h\n' "$D" >> $D/Makefile
 
           # Neutralizar macros trace_* en cada .c
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
@@ -85,8 +84,8 @@ jobs:
             fi
           done
 
-          echo "=== mac.h primeras 10 lineas ==="
-          head -10 $D/mac.h
+          echo "=== Makefile final ==="
+          cat $D/Makefile
 
       - name: Config
         run: |
@@ -136,10 +135,10 @@ jobs:
           cd kernel
           ls -lh ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep vermagic
-          echo "=== __tracepoint en el .ko ==="
-          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "__tracepoint" || echo "0 (ninguno)"
-          echo "=== debugfs_create en el .ko ==="
-          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "debugfs_create" || echo "0 (ninguno)"
+          echo "=== __tracepoint ==="
+          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "__tracepoint" || echo "0"
+          echo "=== debugfs_create ==="
+          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "debugfs_create" || echo "0"
 
       - name: Upload
         uses: actions/upload-artifact@v4

@@ -47,12 +47,6 @@ jobs:
             mv /tmp/init_new.c $D/init.c
           fi
 
-          if ! grep -q "PATCH_MAC_INCLUDES" $D/mac.h; then
-            printf '/* PATCH_MAC_INCLUDES */\n#include <linux/types.h>\n#include <linux/skbuff.h>\n#include <linux/ieee80211.h>\n#include "mt7601u.h"\n' > /tmp/mac_includes.h
-            cat /tmp/mac_includes.h $D/mac.h > /tmp/mac_new.h
-            mv /tmp/mac_new.h $D/mac.h
-          fi
-
           printf '%s\n' \
             '/* PATCH-TRACE */' \
             '#define trace_mt_mcu_msg_send(...) do {} while (0)' \
@@ -81,21 +75,40 @@ jobs:
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
             FILE=$D/$f
             if [ -f "$FILE" ] && ! grep -q "PATCH-TRACE" "$FILE"; then
-              cat /tmp/patch_header.txt "$FILE" > "/tmp/${f}.new"
-              mv "/tmp/${f}.new" "$FILE"
-              echo "$f parcheado"
+              LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
+              if [ -n "$LINE" ]; then
+                sed -i "${LINE}r /tmp/patch_header.txt" "$FILE"
+                echo "$f parcheado después de la línea $LINE"
+              fi
             fi
           done
 
+          if ! grep -q "PATCH_MAC_INCLUDES" $D/mac.h; then
+            printf '/* PATCH_MAC_INCLUDES */\n#include <linux/types.h>\n#include <linux/skbuff.h>\n#include <linux/ieee80211.h>\n' > /tmp/mac_includes.h
+            cat /tmp/mac_includes.h $D/mac.h > /tmp/mac_new.h
+            mv /tmp/mac_new.h $D/mac.h
+          fi
+
+          # Añadir include de mac.h a dma.c y phy.c
+          for f in dma.c phy.c; do
+            FILE=$D/$f
+            if [ -f "$FILE" ] && ! grep -q '#include "mac.h"' "$FILE"; then
+              LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
+              sed -i "${LINE}a #include \"mac.h\"" "$FILE"
+              echo "$f: mac.h añadido después de línea $LINE"
+            fi
+          done
+
+          echo ""
           echo "=== Verificación ==="
-          echo "--- dma.c primeras 3 líneas ---"
-          head -3 $D/dma.c
-          echo "--- phy.c primeras 3 líneas ---"
-          head -3 $D/phy.c
-          echo "--- init.c primeras 3 líneas ---"
-          head -3 $D/init.c
-          echo "--- mac.h primeras 3 líneas ---"
-          head -3 $D/mac.h
+          echo "--- dma.c primeras 10 líneas ---"
+          head -10 $D/dma.c
+          echo "--- phy.c primeras 10 líneas ---"
+          head -10 $D/phy.c
+          echo "--- init.c primeras 10 líneas ---"
+          head -10 $D/init.c
+          echo "--- mac.h primeras 5 líneas ---"
+          head -5 $D/mac.h
 
       - name: Configure kernel (minimal)
         run: |
@@ -116,7 +129,6 @@ jobs:
       - name: Build only mt7601u
         run: |
           cd kernel
-          echo "=== modules_prepare ==="
           make ARCH=arm64 O=../out -j4 \
             KCFLAGS="-Wno-error" \
             CC=../clang/bin/clang \
@@ -127,7 +139,6 @@ jobs:
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
             modules_prepare
-          echo "=== Compilando mt7601u ==="
           make ARCH=arm64 O=../out -j4 \
             KCFLAGS="-Wno-error" \
             CC=../clang/bin/clang \

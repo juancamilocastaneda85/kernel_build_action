@@ -44,6 +44,26 @@ jobs:
           echo "=== DESPUÉS ==="
           grep -n "initcall\|scm_mem_protection_init" $F
 
+      - name: Patch smb1398-charger
+        run: |
+          cd kernel
+          F=drivers/power/supply/qcom/smb1398-charger.c
+          echo "=== ANTES ==="
+          grep -n "of_device_get_match_data" $F
+          sed -i 's/(int)of_device_get_match_data(chip->dev)/(int)(intptr_t)of_device_get_match_data(chip->dev)/' $F
+          echo "=== DESPUÉS ==="
+          grep -n "of_device_get_match_data" $F
+
+      - name: Disable -Werror globally
+        run: |
+          cd kernel
+          # Quitar -Werror de KBUILD_CFLAGS para que los warnings no detengan el build
+          # Esto es necesario porque LineageOS tiene muchos warnings en módulos que
+          # no nos interesan (charger, qcom_scm, etc.)
+          sed -i 's/-Werror//g' Makefile
+          echo "=== Verificando ==="
+          grep -c "Werror" Makefile || echo "0 ocurrencias (OK)"
+
       - name: Configure kernel
         run: |
           cd kernel

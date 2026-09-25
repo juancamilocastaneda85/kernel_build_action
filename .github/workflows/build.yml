@@ -41,9 +41,20 @@ jobs:
           printf '/* PATCH: trace.h vacio */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
           echo '/* PATCH: trace.c vacio */' > $D/trace.c
 
+          # Añadir MT_PHY_TYPE_* a init.c
+          if ! grep -q "PATCH_PHY_TYPES" $D/init.c; then
+            printf '/* PATCH_PHY_TYPES */\n#ifndef MT_PHY_TYPE_CCK\n#define MT_PHY_TYPE_CCK 0\n#endif\n#ifndef MT_PHY_TYPE_OFDM\n#define MT_PHY_TYPE_OFDM 1\n#endif\n#ifndef MT_PHY_TYPE_HT\n#define MT_PHY_TYPE_HT 2\n#endif\n#ifndef MT_PHY_TYPE_HT_GF\n#define MT_PHY_TYPE_HT_GF 3\n#endif\n' > /tmp/phy_types.h
+            cat /tmp/phy_types.h $D/init.c > /tmp/init_new.c
+            mv /tmp/init_new.c $D/init.c
+            echo "=== init.c con MT_PHY_TYPE_* ==="
+            head -8 $D/init.c
+          fi
+
+          # Generar stubs dinámicos EXCLUYENDO trace_mt_mcu_msg_send_cs
           grep -ohE 'trace_[a-zA-Z0-9_]+\(' $D/*.c | sed 's/($//' | sort -u | \
+            grep -v 'trace_mt_mcu_msg_send_cs' | \
             awk '{print "#define " $0 "(...) do {} while (0)"}' > /tmp/patch_header.txt
-          echo "=== Stubs generados (deben cubrir TODAS las llamadas trace_* reales) ==="
+          echo "=== Stubs generados ==="
           cat /tmp/patch_header.txt
 
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
@@ -72,25 +83,6 @@ jobs:
             fi
           done
 
-      - name: Debug - buscar macros TXWI_RATE (diagnóstico, no bloquea)
-        run: |
-          cd kernel
-          D=drivers/net/wireless/mediatek/mt7601u
-          echo "=== Buscando TXWI_RATE en todos los .h del driver ==="
-          grep -rn "TXWI_RATE" $D/*.h || echo "NO ENCONTRADO en ningún .h del driver"
-          echo ""
-          echo "=== Buscando TXWI_RATE en TODO el árbol wireless/mediatek (por si viene de mt76) ==="
-          grep -rn "TXWI_RATE" drivers/net/wireless/mediatek/ --include="*.h" || echo "NO ENCONTRADO en todo mediatek/"
-          echo ""
-          echo "=== Buscando definiciones similares (RATE_MCS, RATE_PHY) ==="
-          grep -rn "RATE_MCS\|RATE_PHY_MODE" $D/*.h
-          echo ""
-          echo "=== Contexto real de mac.c líneas 1-70 ==="
-          sed -n '1,70p' $D/mac.c
-          echo ""
-          echo "=== Includes actuales de mac.c ==="
-          grep -n "^#include" $D/mac.c
-
       - name: Configure kernel (minimal)
         run: |
           cd kernel
@@ -108,7 +100,6 @@ jobs:
           grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK)" ../out/.config
 
       - name: Build only mt7601u
-        continue-on-error: true
         run: |
           cd kernel
           make ARCH=arm64 O=../out -j4 \
@@ -136,20 +127,21 @@ jobs:
           echo "=== Buscando mt7601u.ko ==="
           find ../out -name "mt7601u.ko" -ls
 
-      - name: Copy mt7601u.ko (si existe)
+      - name: Copy mt7601u.ko
         run: |
           cd kernel
           mkdir -p ../ko_output
           find ../out -name "mt7601u.ko" -exec cp {} ../ko_output/ \; || true
-          ls -la ../ko_output/ || echo "carpeta vacía"
+          ls -la ../ko_output/
           if [ -f ../ko_output/mt7601u.ko ]; then
             echo "=== ¡MÓDULO ENCONTRADO! ==="
-            ../clang/bin/llvm-nm ../ko_output/mt7601u.ko | grep -i vermagic || true
+            modinfo ../ko_output/mt7601u.ko | head -20
           else
-            echo "=== mt7601u.ko NO encontrado — revisar step 'Debug' y 'Build only mt7601u' ==="
+            echo "=== mt7601u.ko NO encontrado ==="
+            exit 1
           fi
 
-      - name: Upload artifact (aunque falle, para poder ver logs/.o parciales)
+      - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:

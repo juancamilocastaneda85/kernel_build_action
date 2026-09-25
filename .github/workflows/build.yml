@@ -1,5 +1,4 @@
 name: Build MT7601U AP Driver
-
 on:
   workflow_dispatch:
 
@@ -7,161 +6,114 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout action repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Checkout kernel source
+      - name: Checkout kernel
         uses: actions/checkout@v4
         with:
           repository: LineageOS/android_kernel_motorola_sm6375
           ref: lineage-23.2
           path: kernel
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           sudo apt-get update
           sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils
 
-      - name: Download clang-r416183b
+      - name: Download clang
         run: |
           mkdir -p clang
           wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang-r416183b.tar.gz -O clang.tar.gz
           tar -xzf clang.tar.gz -C clang
           rm clang.tar.gz
 
-      - name: Diagnóstico previo
+      - name: Diagnóstico
         run: |
           cd kernel
           echo "===== init.c: interface_modes ====="
-          grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c
+          grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c || true
           echo ""
-          echo "===== trace_* usados en .c ====="
-          grep -rhoE "trace_[a-z_]+\(" drivers/net/wireless/mediatek/mt7601u/*.c | sort -u
+          echo "===== trace_* usados ====="
+          grep -rhoE "trace_[a-z_]+\(" drivers/net/wireless/mediatek/mt7601u/*.c 2>/dev/null | sort -u || true
           echo ""
-          echo "===== debugfs_* usados ====="
-          grep -rhoE "mt7601u_debugfs_[a-z_]+\(" drivers/net/wireless/mediatek/mt7601u/*.c | sort -u
+          echo "===== debugfs usados ====="
+          grep -rhoE "mt7601u_debugfs_[a-z_]+\(" drivers/net/wireless/mediatek/mt7601u/*.c 2>/dev/null | sort -u || true
 
-      - name: Patch Kernel Source (AP Mode + trace + debugfs removal)
+      - name: Patch source
         run: |
           cd kernel
-
-          # === Parche 1: modo AP ===
           F=drivers/net/wireless/mediatek/mt7601u/init.c
-          if grep -q "wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);" "$F"; then
-            sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
-            echo "=== Parche AP aplicado ==="
-          fi
-          
-          # === Parche 2: vaciar trace.h y trace.c ===
-          T=drivers/net/wireless/mediatek/mt7601u/trace.h
-          C=drivers/net/wireless/mediatek/mt7601u/trace.c
-          
-          cat > "$T" << 'EOF'
-/* PATCH: trace.h vacío */
-#ifndef __MT7601U_TRACE_H
-#define __MT7601U_TRACE_H
-#endif
-EOF
-          
-          echo "/* PATCH: trace.c vacío */" > "$C"
-          
-          # === Parche 3: eliminar debugfs del Makefile ===
+          sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
+          printf '/* PATCH: trace.h vacio */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > drivers/net/wireless/mediatek/mt7601u/trace.h
+          echo '/* PATCH: trace.c vacio */' > drivers/net/wireless/mediatek/mt7601u/trace.c
           M=drivers/net/wireless/mediatek/mt7601u/Makefile
           sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' "$M"
-          
-          # === Parche 4: neutralizar trace_* en cada .c ===
+          echo "=== Makefile final ==="
+          cat "$M"
+
+      - name: Neutralize trace macros
+        run: |
+          cd kernel
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c debugfs.c; do
             FILE=drivers/net/wireless/mediatek/mt7601u/$f
             if [ -f "$FILE" ]; then
-              sed -i '1i\
-/* PATCH-TRACE: neutralizar todas las macros trace_* */\
-#define trace_mt_mcu_msg_send(...) do {} while (0)\
-#define trace_mt_mcu_msg_send_cs(...) do {} while (0)\
-#define trace_mt_submit_urb_sync(...) do {} while (0)\
-#define trace_mt_submit_urb(...) do {} while (0)\
-#define trace_mt_vend_req(...) do {} while (0)\
-#define trace_reg_read(...) do {} while (0)\
-#define trace_reg_write(...) do {} while (0)\
-#define trace_mt_rx(...) do {} while (0)\
-#define trace_mt_tx(...) do {} while (0)\
-#define trace_mt_tx_status_cleaned(...) do {} while (0)\
-#define trace_mt_rx_dma_aggr(...) do {} while (0)\
-#define trace_mt_tx_dma_done(...) do {} while (0)\
-#define trace_mt_bbp_read(...) do {} while (0)\
-#define trace_mt_bbp_write(...) do {} while (0)\
-#define trace_mt_freq_cal_adjust(...) do {} while (0)\
-#define trace_mt_freq_cal_offset(...) do {} while (0)\
-#define trace_mt_read_temp(...) do {} while (0)\
-#define trace_mt_rf_read(...) do {} while (0)\
-#define trace_mt_rf_write(...) do {} while (0)\
-#define trace_mt_temp_mode(...) do {} while (0)\
-#define trace_mt_set_key(...) do {} while (0)\
-#define trace_mt_set_shared_key(...) do {} while (0)' "$FILE"
+              printf '%s\n' \
+                '/* PATCH-TRACE: neutralizar macros trace_* */' \
+                '#define trace_mt_mcu_msg_send(...) do {} while (0)' \
+                '#define trace_mt_mcu_msg_send_cs(...) do {} while (0)' \
+                '#define trace_mt_submit_urb_sync(...) do {} while (0)' \
+                '#define trace_mt_submit_urb(...) do {} while (0)' \
+                '#define trace_mt_vend_req(...) do {} while (0)' \
+                '#define trace_reg_read(...) do {} while (0)' \
+                '#define trace_reg_write(...) do {} while (0)' \
+                '#define trace_mt_rx(...) do {} while (0)' \
+                '#define trace_mt_tx(...) do {} while (0)' \
+                '#define trace_mt_tx_status_cleaned(...) do {} while (0)' \
+                '#define trace_mt_rx_dma_aggr(...) do {} while (0)' \
+                '#define trace_mt_tx_dma_done(...) do {} while (0)' \
+                '#define trace_mt_bbp_read(...) do {} while (0)' \
+                '#define trace_mt_bbp_write(...) do {} while (0)' \
+                '#define trace_mt_freq_cal_adjust(...) do {} while (0)' \
+                '#define trace_mt_freq_cal_offset(...) do {} while (0)' \
+                '#define trace_mt_read_temp(...) do {} while (0)' \
+                '#define trace_mt_rf_read(...) do {} while (0)' \
+                '#define trace_mt_rf_write(...) do {} while (0)' \
+                '#define trace_mt_temp_mode(...) do {} while (0)' \
+                '#define trace_mt_set_key(...) do {} while (0)' \
+                '#define trace_mt_set_shared_key(...) do {} while (0)' \
+                > /tmp/patch_header.txt
+              cat /tmp/patch_header.txt "$FILE" > /tmp/new_file.c
+              mv /tmp/new_file.c "$FILE"
             fi
           done
-          echo "=== trace_* neutralizados en todos los .c ==="
-          
-          # === Parche 5: neutralizar debugfs en main.c ===
-          if [ -f "drivers/net/wireless/mediatek/mt7601u/main.c" ]; then
-            sed -i -E 's/(mt7601u_debugfs_init|mt7601u_debugfs_remove|mt7601u_debugfs_register)/\/\* PATCH-DEBUGFS: \1 \*\//g' drivers/net/wireless/mediatek/mt7601u/main.c
-            echo "=== debugfs neutralizado en main.c ==="
-          fi
-          
-          echo ""
-          echo "=== Makefile final ==="
-          cat "$M"
-          
-          echo ""
-          echo "=== Verificación trace_ restantes ==="
-          grep -rn "trace_" drivers/net/wireless/mediatek/mt7601u/*.c | grep -v "PATCH-TRACE" | grep -v "^.*:1:" | head -5 || echo "(todas neutralizadas)"
+          echo "=== trace_* neutralizados ==="
 
-      - name: Prepare Kernel Config
+      - name: Config
         run: |
           cd kernel
           mkdir -p ../out
-          
-          if [ -f "arch/arm64/configs/vendor/holi-qgki_defconfig" ]; then
-            make ARCH=arm64 O=../out vendor/holi-qgki_defconfig
-          else
-            echo "ERROR: holi-qgki_defconfig no encontrado"
-            exit 1
-          fi
-          
-          for fragment in \
-            arch/arm64/configs/vendor/holi_GKI.config \
-            arch/arm64/configs/vendor/holi_consolidate.config \
-            arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config; do
-            if [ -f "$fragment" ]; then
-              cat "$fragment" >> ../out/.config
-            fi
-          done
-          
-          wc -l ../out/.config
-
-      - name: Configure Kernel
-        run: |
-          cd kernel
-          CONFIG=../out/.config
-          
-          ./scripts/config --file $CONFIG --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
-          ./scripts/config --file $CONFIG --disable CONFIG_LOCALVERSION_AUTO
-          ./scripts/config --file $CONFIG --enable CONFIG_MODVERSIONS
-          ./scripts/config --file $CONFIG --enable CONFIG_MODULE_FORCE_LOAD
-          ./scripts/config --file $CONFIG --module CONFIG_MT7601U
-          ./scripts/config --file $CONFIG --enable CONFIG_WLAN_VENDOR_MEDIATEK
-          ./scripts/config --file $CONFIG --enable CONFIG_CFG80211
-          ./scripts/config --file $CONFIG --enable CONFIG_MAC80211
-          ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL
-          ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL_HT
-          
+          make ARCH=arm64 O=../out vendor/holi-qgki_defconfig
+          cat arch/arm64/configs/vendor/holi_GKI.config >> ../out/.config
+          cat arch/arm64/configs/vendor/holi_consolidate.config >> ../out/.config
+          cat arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config >> ../out/.config
+          ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
+          ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
+          ./scripts/config --file ../out/.config --enable CONFIG_MODVERSIONS
+          ./scripts/config --file ../out/.config --enable CONFIG_MODULE_FORCE_LOAD
+          ./scripts/config --file ../out/.config --module CONFIG_MT7601U
+          ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
+          ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
+          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
+          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
+          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
           yes "" | make ARCH=arm64 O=../out olddefconfig
-          
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD)" $CONFIG
+          echo "=== Config final ==="
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD)" ../out/.config || true
 
-      - name: Build MT7601U module
+      - name: Build module
         run: |
           cd kernel
-          
           echo "=== modules_prepare ==="
           make ARCH=arm64 O=../out -j4 \
             CC=../clang/bin/clang \
@@ -172,7 +124,6 @@ EOF
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
             modules_prepare
-          
           echo ""
           echo "=== Compilando mt7601u.ko ==="
           KBUILD_MODPOST_WARN=1 make ARCH=arm64 O=../out -j4 \
@@ -190,22 +141,24 @@ EOF
         run: |
           cd kernel
           KO=../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
-          
           if [ -f "$KO" ]; then
             echo "=== ¡MÓDULO COMPILADO! ==="
             ls -lh "$KO"
             modinfo "$KO" | grep vermagic || true
             modinfo "$KO" | head -15 || true
-            strings "$KO" | grep -q "NL80211_IFTYPE_AP" && echo "=== MODO AP PRESENTE ===" || echo "=== ALERTA: Modo AP NO detectado ==="
+            if strings "$KO" | grep -q "NL80211_IFTYPE_AP"; then
+              echo "=== MODO AP PRESENTE ==="
+            else
+              echo "=== ALERTA: Modo AP NO detectado ==="
+            fi
           else
             echo "=== ERROR: mt7601u.ko NO se generó ==="
             find ../out -name "*.ko" 2>/dev/null | head -20
             exit 1
           fi
 
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: mt7601u-ap-module
-          path: |
-            out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+          path: out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko

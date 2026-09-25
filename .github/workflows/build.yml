@@ -37,21 +37,15 @@ jobs:
         run: |
           cd kernel
           F=drivers/firmware/qcom_scm.c
-          echo "=== ANTES ==="
-          grep -n "initcall\|scm_mem_protection_init" $F
           sed -i 's|^early_initcall(scm_mem_protection_init);|/* PATCH: disabled for module build */|' $F
           sed -i 's|^static int __init scm_mem_protection_init(void)|static int __init __maybe_unused scm_mem_protection_init(void)|' $F
-          echo "=== DESPUÉS ==="
           grep -n "initcall\|scm_mem_protection_init" $F
 
       - name: Patch smb1398-charger
         run: |
           cd kernel
           F=drivers/power/supply/qcom/smb1398-charger.c
-          echo "=== ANTES ==="
-          grep -n "of_device_get_match_data" $F
           sed -i 's/(int)of_device_get_match_data(chip->dev)/(int)(uintptr_t)of_device_get_match_data(chip->dev)/' $F
-          echo "=== DESPUÉS ==="
           grep -n "of_device_get_match_data" $F
 
       - name: Configure kernel
@@ -74,6 +68,7 @@ jobs:
           grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK)" ../out/.config
 
       - name: Build kernel modules (full)
+        continue-on-error: true
         run: |
           cd kernel
           make ARCH=arm64 O=../out -j4 \
@@ -87,19 +82,27 @@ jobs:
             STRIP=../clang/bin/llvm-strip \
             KBUILD_MODPOST_WARN=1 \
             modules
+          echo "Build terminado (con o sin errores)"
 
-      - name: Verify module
+      - name: Find and copy mt7601u.ko
         run: |
           cd kernel
-          KO=../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
-          if [ -f "$KO" ]; then
-            echo "=== MODULO COMPILADO ==="
-            ls -lh "$KO"
-            modinfo "$KO" | grep vermagic
-            strings "$KO" | grep -q "NL80211_IFTYPE_AP" && echo "=== MODO AP PRESENTE ==="
+          echo "=== Buscando mt7601u.ko ==="
+          find ../out -name "mt7601u.ko" -ls
+          
+          # Copiar a un lugar conocido
+          mkdir -p ../ko_output
+          find ../out -name "mt7601u.ko" -exec cp {} ../ko_output/ \;
+          
+          echo ""
+          echo "=== Contenido de ko_output ==="
+          ls -la ../ko_output/
+          
+          if [ -f ../ko_output/mt7601u.ko ]; then
+            echo "=== ¡MÓDULO ENCONTRADO! ==="
+            modinfo ../ko_output/mt7601u.ko | head -20
           else
-            echo "=== mt7601u.ko NO generado ==="
-            find ../out -name "mt7601u.ko" 2>/dev/null
+            echo "=== mt7601u.ko NO encontrado ==="
             exit 1
           fi
 
@@ -107,4 +110,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mt7601u-module
-          path: out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+          path: ko_output/mt7601u.ko

@@ -36,30 +36,26 @@ jobs:
           grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c
           echo ""
           echo "===== Versión del kernel ====="
-          cat Makefile | head -5 | grep -E "VERSION|PATCHLEVEL|SUBLEVEL"
+          head -5 Makefile | grep -E "VERSION|PATCHLEVEL|SUBLEVEL"
+          echo ""
+          echo "===== Contenido del .config viejo del repo (si existe) ====="
+          ls -la ../*.config ../config* 2>/dev/null || echo "(no hay config en la raíz del repo)"
 
       - name: Patch Kernel Source (AP Mode)
         run: |
           cd kernel
 
-          # Parche para habilitar modo AP en MT7601U
-          # Basado en el parche de Chukun Pan enviado a linux-wireless
-          # https://patchew.org/linux/20260815124547.329654-1-johnrobin044@gmail.com/
-          
           F=drivers/net/wireless/mediatek/mt7601u/init.c
           
-          # Buscar la línea exacta de interface_modes
           if grep -q "wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);" "$F"; then
             sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
             echo "=== Parche AP aplicado (STATION -> STATION | AP) ==="
           elif grep -q "wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |" "$F"; then
             echo "=== Parche AP ya estaba aplicado ==="
           else
-            echo "=== ADVERTENCIA: No se encontró la línea esperada. Revisando... ==="
+            echo "=== ADVERTENCIA: No se encontró la línea esperada. Aplicando fallback ==="
             grep -n "interface_modes" "$F"
-            # Fallback: añadir AP a cualquier línea que asigne interface_modes
             sed -i 's/BIT(NL80211_IFTYPE_STATION)/BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP)/' "$F"
-            echo "=== Fallback aplicado ==="
           fi
           
           echo ""
@@ -71,37 +67,43 @@ jobs:
           cd kernel
           mkdir -p ../out
           
-          # Usar el config real del teléfono como base
-          # (el que se subió al repo como config_real.txt)
-          if [ -f ../config_real.txt ]; then
-            cp ../config_real.txt ../out/.config
-            echo "=== Usando config_real.txt como base ==="
+          # Buscar cualquier archivo de config que exista en la raíz del repo
+          CONFIG_FOUND=""
+          for f in ../config_real.txt ../.config ../config ../*.config; do
+            if [ -f "$f" ]; then
+              echo "=== Encontrado: $f ==="
+              CONFIG_FOUND="$f"
+              break
+            fi
+          done
+          
+          if [ -n "$CONFIG_FOUND" ]; then
+            cp "$CONFIG_FOUND" ../out/.config
+            echo "=== Usando $CONFIG_FOUND como base ==="
           else
-            echo "=== ERROR: config_real.txt no encontrado. Usando defconfig... ==="
+            echo "=== No se encontró config. Generando desde defconfig ==="
             make ARCH=arm64 O=../out holi_defconfig
           fi
 
-      - name: Configure Kernel (solo MT7601U + AP)
+      - name: Configure Kernel (forzar valores críticos)
         run: |
           cd kernel
           CONFIG=../out/.config
           
-          # === CRÍTICO: Alinear con el kernel real ===
-          # LOCALVERSION exacto (del uname -r del teléfono)
+          echo "=== ANTES de los ajustes ==="
+          grep -E "CONFIG_(LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD|MT7601U)" $CONFIG || echo "(no estaban seteados)"
+          
+          # === FORZAR valores críticos para alinear con el kernel real ===
           ./scripts/config --file $CONFIG --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file $CONFIG --disable CONFIG_LOCALVERSION_AUTO
-          
-          # MODVERSIONS debe estar activo (tu kernel lo tiene)
           ./scripts/config --file $CONFIG --enable CONFIG_MODVERSIONS
-          
-          # MODULE_FORCE_LOAD debe estar activo (para permitir insmod -f)
           ./scripts/config --file $CONFIG --enable CONFIG_MODULE_FORCE_LOAD
           
           # === Añadir el driver MT7601U ===
           ./scripts/config --file $CONFIG --module CONFIG_MT7601U
           ./scripts/config --file $CONFIG --enable CONFIG_WLAN_VENDOR_MEDIATEK
           
-          # Asegurar dependencias WiFi
+          # === Asegurar dependencias WiFi ===
           ./scripts/config --file $CONFIG --enable CONFIG_CFG80211
           ./scripts/config --file $CONFIG --enable CONFIG_MAC80211
           ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL
@@ -110,16 +112,14 @@ jobs:
           # === Aplicar cambios ===
           yes "" | make ARCH=arm64 O=../out olddefconfig
           
-          echo "=== Verificación de configuración ==="
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD)" $CONFIG
+          echo ""
+          echo "=== DESPUÉS de los ajustes ==="
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD|CFG80211|MAC80211)" $CONFIG
 
       - name: Build MT7601U module
         run: |
           cd kernel
           
-          # Compilar solo el módulo mt7601u
-          # Usamos KBUILD_MODPOST_WARN=1 para permitir símbolos no resueltos
-          # (el module.symvers no está completo sin compilar todo el kernel)
           KBUILD_MODPOST_WARN=1 make ARCH=arm64 O=../out -j4 \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \

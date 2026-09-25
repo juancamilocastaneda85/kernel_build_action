@@ -33,6 +33,7 @@ jobs:
         run: |
           cd kernel
 
+          # 1. probe_user_write
           if ! grep -q "probe_user_write" include/linux/uaccess.h; then
             LINE=$(grep -n "^#endif" include/linux/uaccess.h | tail -1 | cut -d: -f1)
             sed -i "${LINE}i\\
@@ -45,16 +46,30 @@ jobs:
           }" include/linux/uaccess.h
           fi
 
+          # 2. taskstats
           sed -i 's/^#elif$/#elif defined(CONFIG_SYSSTATS)/' kernel/taskstats.c
           sed -i 's/sysstats_fill_zoneinfo(stats);/\/\/ PATCH: ignore sysstats_fill_zoneinfo/' kernel/taskstats.c
+
+          # 3. apcs-msm8916.c
           sed -i 's/static const u32 gpll0_a53cc_map\[\] = {/static const struct parent_map gpll0_a53cc_map[] = {/' drivers/clk/qcom/apcs-msm8916.c
-          sed -i '/rc80211_minstrel\.o/d' net/mac80211/Makefile
+
+          # 4. gcc-qcs404.c
           sed -i '/^enum {/a \	P_XO,\n\tP_GPLL0_OUT_AUX,' drivers/clk/qcom/gcc-qcs404.c
+
+          # 5. qrtr/tun.c
           sed -i 's/qrtr_endpoint_register(&tun->ep, QRTR_EP_NET_ID_AUTO, 0)/qrtr_endpoint_register(\&tun->ep, QRTR_EP_NET_ID_AUTO, false, NULL)/' net/qrtr/tun.c
+
+          # 6. cts_driver.c
           sed -i '1i #include <linux/fb.h>' drivers/input/touchscreen/chipone_tddi_v2_mmi/cts_driver.c
           sed -i '1i #ifndef FB_EARLY_EVENT_BLANK\n#define FB_EARLY_EVENT_BLANK 0x10\n#endif' drivers/input/touchscreen/chipone_tddi_v2_mmi/cts_driver.c
-          sed -i '/#include <linux\/soc\/qcom\/geni-se.h>/d' drivers/i2c/busses/i2c-qcom-geni.c
+
+          # 7. i2c-qcom-geni.c (FIX COMPLETO)
           sed -i 's/gi2c->base/gi2c->se.base/g' drivers/i2c/busses/i2c-qcom-geni.c
+          if ! grep -q "geni_write_reg" drivers/i2c/busses/i2c-qcom-geni.c; then
+            sed -i '1i static inline void geni_write_reg(u32 val, void __iomem *base) { writel_relaxed(val, base); }' drivers/i2c/busses/i2c-qcom-geni.c
+          fi
+
+          # 8. fb.h global
           sed -i '/^#define FB_EVENT_BLANK/a #ifndef FB_EARLY_EVENT_BLANK\n#define FB_EARLY_EVENT_BLANK  0x10\n#endif' include/linux/fb.h
 
           echo "Kernel source patched."
@@ -64,9 +79,17 @@ jobs:
           cd kernel
           mkdir -p ../out
           make ARCH=arm64 O=../out defconfig
-          cat arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config >> ../out/.config
+          cat arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config >> ../out/.config || true
+
+          # ---- WiFi / antena: NO TOCAR, DEBE SOBREVIVIR ----
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
+          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
+          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
+          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
+          ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
+
+          # ---- Quitar solo lo que molesta a la verificación ----
           ./scripts/config --file ../out/.config --disable CONFIG_LTO
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_THIN
@@ -76,13 +99,15 @@ jobs:
           ./scripts/config --file ../out/.config --set-val CONFIG_FRAME_WARN 0
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
+
+          # ---- Resto de drivers MMI que el árbol pide ----
           ./scripts/config --file ../out/.config --enable CONFIG_SCHED_WALT
           ./scripts/config --file ../out/.config --enable CONFIG_SCHED_CASS
           ./scripts/config --file ../out/.config --enable CONFIG_TASKS_TRACE_RCU
           ./scripts/config --file ../out/.config --enable CONFIG_TASKS_RCU
           ./scripts/config --file ../out/.config --enable CONFIG_BPF_SYSCALL
           ./scripts/config --file ../out/.config --enable CONFIG_QCOM_SCM
-          # Forzar los drivers problemáticos a built-in (=y)
+
           cat >> ../out/.config << 'EOF'
           CONFIG_SND_SOC_AW882XX=y
           CONFIG_SND_SOC_AW882XX_ACF=y
@@ -92,17 +117,17 @@ jobs:
           CONFIG_CCI_INTF=y
           CONFIG_GOODIX_FOD_MMI=y
           CONFIG_DRM_PANEL_NOTIFIER=y
-          CONFIG_MAC80211=y
-          CONFIG_MAC80211_RC_MINSTREL=y
-          CONFIG_MAC80211_RC_MINSTREL_HT=y
           EOF
+
           yes "1" | make ARCH=arm64 O=../out olddefconfig
 
-      - name: Verify .config
+      - name: Verify .config (WiFi debe estar vivo)
         run: |
           cd kernel
-          echo "=== Opciones problemáticas ==="
-          grep -E "CONFIG_(SND_SOC_AW882XX|GOODIX_FOD_MMI|MSM_CAMERA_CCI|MAC80211_RC_MINSTREL|CCI_INTF|DRM_PANEL_NOTIFIER)" ../out/.config
+          echo "=== WiFi / antena (DEBE estar activo) ==="
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|MAC80211|MAC80211_RC_MINSTREL|CFG80211)" ../out/.config || echo "!!! FALTA ALGO DE WIFI !!!"
+          echo "=== Otros ==="
+          grep -E "CONFIG_(SND_SOC_AW882XX|GOODIX_FOD_MMI|MSM_CAMERA_CCI|CCI_INTF|DRM_PANEL_NOTIFIER)" ../out/.config
 
       - name: Build kernel
         run: |
@@ -117,10 +142,18 @@ jobs:
             STRIP=../clang/bin/llvm-strip \
             Image modules
 
+      - name: Collect .ko files
+        run: |
+          mkdir -p ko_output
+          find out -name "mt7601u.ko" -exec cp {} ko_output/ \;
+          find out -name "mac80211.ko" -exec cp {} ko_output/ \; || true
+          find out -name "cfg80211.ko" -exec cp {} ko_output/ \; || true
+          ls -lh ko_output/
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: kernel-output
           path: |
             out/arch/arm64/boot/Image
-            out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+            ko_output/*.ko

@@ -1,4 +1,4 @@
-name: Build Kernel with MT7601U
+name: Build MT7601U AP Driver
 
 on:
   workflow_dispatch:
@@ -17,18 +17,6 @@ jobs:
           ref: lineage-23.2
           path: kernel
 
-      - name: Diagnóstico previo (dump archivos clave)
-        run: |
-          cd kernel
-          echo "########## net/mac80211/Makefile — COMPLETO ##########"
-          cat -A net/mac80211/Makefile | head -80
-          echo ""
-          echo "########## Archivos minstrel en net/mac80211/ ##########"
-          ls -la net/mac80211/rc80211_minstrel* || echo "(no hay archivos)"
-          echo ""
-          echo "########## i2c-qcom-geni.c: línea con geni_write_reg ##########"
-          grep -n "geni_write_reg" drivers/i2c/busses/i2c-qcom-geni.c || echo "(no encontrado)"
-
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -41,115 +29,98 @@ jobs:
           tar -xzf clang.tar.gz -C clang
           rm clang.tar.gz
 
-      - name: Patch Kernel Source
+      - name: Diagnóstico previo
+        run: |
+          cd kernel
+          echo "===== init.c: línea de interface_modes ====="
+          grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c
+          echo ""
+          echo "===== Versión del kernel ====="
+          cat Makefile | head -5 | grep -E "VERSION|PATCHLEVEL|SUBLEVEL"
+
+      - name: Patch Kernel Source (AP Mode)
         run: |
           cd kernel
 
-          # 1. probe_user_write
-          if ! grep -q "probe_user_write" include/linux/uaccess.h; then
-            LINE=$(grep -n "^#endif" include/linux/uaccess.h | tail -1 | cut -d: -f1)
-            sed -i "${LINE}i\\
-          \\
-          static inline bool probe_user_write(const void __user *dst, const void *src, size_t len)\\
-          {\\
-              if (!access_ok(dst, len))\\
-                  return false;\\
-              return !copy_to_user((void __user *)dst, src, len);\\
-          }" include/linux/uaccess.h
+          # Parche para habilitar modo AP en MT7601U
+          # Basado en el parche de Chukun Pan enviado a linux-wireless
+          # https://patchew.org/linux/20260815124547.329654-1-johnrobin044@gmail.com/
+          
+          F=drivers/net/wireless/mediatek/mt7601u/init.c
+          
+          # Buscar la línea exacta de interface_modes
+          if grep -q "wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);" "$F"; then
+            sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
+            echo "=== Parche AP aplicado (STATION -> STATION | AP) ==="
+          elif grep -q "wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |" "$F"; then
+            echo "=== Parche AP ya estaba aplicado ==="
+          else
+            echo "=== ADVERTENCIA: No se encontró la línea esperada. Revisando... ==="
+            grep -n "interface_modes" "$F"
+            # Fallback: añadir AP a cualquier línea que asigne interface_modes
+            sed -i 's/BIT(NL80211_IFTYPE_STATION)/BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP)/' "$F"
+            echo "=== Fallback aplicado ==="
           fi
+          
+          echo ""
+          echo "=== Verificación del parche ==="
+          grep -n "interface_modes" "$F"
 
-          # 2. taskstats
-          sed -i 's/^#elif$/#elif defined(CONFIG_SYSSTATS)/' kernel/taskstats.c
-          sed -i 's/sysstats_fill_zoneinfo(stats);/\/\/ PATCH: ignore sysstats_fill_zoneinfo/' kernel/taskstats.c
-
-          # 3. apcs-msm8916.c
-          sed -i 's/static const u32 gpll0_a53cc_map\[\] = {/static const struct parent_map gpll0_a53cc_map[] = {/' drivers/clk/qcom/apcs-msm8916.c
-
-          # 4. gcc-qcs404.c
-          sed -i '/^enum {/a \	P_XO,\n\tP_GPLL0_OUT_AUX,' drivers/clk/qcom/gcc-qcs404.c
-
-          # 5. qrtr/tun.c
-          sed -i 's/qrtr_endpoint_register(&tun->ep, QRTR_EP_NET_ID_AUTO, 0)/qrtr_endpoint_register(\&tun->ep, QRTR_EP_NET_ID_AUTO, false, NULL)/' net/qrtr/tun.c
-
-          # 6. cts_driver.c
-          sed -i '1i #include <linux/fb.h>' drivers/input/touchscreen/chipone_tddi_v2_mmi/cts_driver.c
-          sed -i '1i #ifndef FB_EARLY_EVENT_BLANK\n#define FB_EARLY_EVENT_BLANK 0x10\n#endif' drivers/input/touchscreen/chipone_tddi_v2_mmi/cts_driver.c
-
-          # 7. i2c-qcom-geni.c — FIX v3 (firma 3 args)
-          F=drivers/i2c/busses/i2c-qcom-geni.c
-          sed -i 's/gi2c->noise_rjct_sda << 3, gi2c->base,/gi2c->noise_rjct_sda << 3, gi2c->se.base,/' "$F"
-          if ! grep -q "static inline void geni_write_reg" "$F"; then
-            LINE=$(grep -n "^#include" "$F" | tail -1 | cut -d: -f1)
-            sed -i "${LINE}a\\
-          \\
-          /* PATCH: geni_write_reg missing (3-arg version) */\\
-          static inline void geni_write_reg(u32 val, void __iomem *base, u32 offset)\\
-          {\\
-              writel_relaxed(val, base + offset);\\
-          }" "$F"
-          fi
-          echo "=== Verificación i2c-qcom-geni ==="
-          grep -n "geni_write_reg\|gi2c->base" "$F" || echo "(nada)"
-
-          # 8. mac80211 — deshabilitar rc80211_minstrel.o sin importar formato
-          M=net/mac80211/Makefile
-          sed -i '/rc80211_minstrel\.o/{
-            /rc80211_minstrel_ht\.o/!s/^/# PATCH-DISABLED: /
-          }' "$M"
-          echo "=== mac80211 Makefile (después del patch) ==="
-          grep -n "minstrel" "$M" || echo "(sin minstrel — ALERTA)"
-          echo "=== Líneas deshabilitadas ==="
-          grep -n "PATCH-DISABLED" "$M" || echo "(ninguna)"
-
-          # 9. fb.h global
-          sed -i '/^#define FB_EVENT_BLANK/a #ifndef FB_EARLY_EVENT_BLANK\n#define FB_EARLY_EVENT_BLANK  0x10\n#endif' include/linux/fb.h
-
-          echo "Kernel source patched."
-
-      - name: Configure kernel
+      - name: Prepare Kernel Config
         run: |
           cd kernel
           mkdir -p ../out
-          make ARCH=arm64 O=../out defconfig
-          cat arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config >> ../out/.config || true
+          
+          # Usar el config real del teléfono como base
+          # (el que se subió al repo como config_real.txt)
+          if [ -f ../config_real.txt ]; then
+            cp ../config_real.txt ../out/.config
+            echo "=== Usando config_real.txt como base ==="
+          else
+            echo "=== ERROR: config_real.txt no encontrado. Usando defconfig... ==="
+            make ARCH=arm64 O=../out holi_defconfig
+          fi
 
-          ./scripts/config --file ../out/.config --module CONFIG_MT7601U
-          ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
-          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
-          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
-          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
-          ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
-
-          ./scripts/config --file ../out/.config --disable CONFIG_LTO
-          ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG
-          ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_REL_CRCS
-          ./scripts/config --file ../out/.config --disable CONFIG_KSU
-          ./scripts/config --file ../out/.config --set-val CONFIG_FRAME_WARN 0
-          ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
-          ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
-
-          ./scripts/config --file ../out/.config --enable CONFIG_SCHED_WALT
-          ./scripts/config --file ../out/.config --enable CONFIG_SCHED_CASS
-          ./scripts/config --file ../out/.config --enable CONFIG_TASKS_TRACE_RCU
-          ./scripts/config --file ../out/.config --enable CONFIG_TASKS_RCU
-          ./scripts/config --file ../out/.config --enable CONFIG_BPF_SYSCALL
-          ./scripts/config --file ../out/.config --enable CONFIG_QCOM_SCM
-
-          yes "1" | make ARCH=arm64 O=../out olddefconfig || true
-
-      - name: Verify .config
+      - name: Configure Kernel (solo MT7601U + AP)
         run: |
           cd kernel
-          echo "=== WiFi / antena ==="
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|MAC80211|MAC80211_RC_MINSTREL|CFG80211)" ../out/.config || echo "!!! FALTA WIFI !!!"
-          exit 0
+          CONFIG=../out/.config
+          
+          # === CRÍTICO: Alinear con el kernel real ===
+          # LOCALVERSION exacto (del uname -r del teléfono)
+          ./scripts/config --file $CONFIG --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
+          ./scripts/config --file $CONFIG --disable CONFIG_LOCALVERSION_AUTO
+          
+          # MODVERSIONS debe estar activo (tu kernel lo tiene)
+          ./scripts/config --file $CONFIG --enable CONFIG_MODVERSIONS
+          
+          # MODULE_FORCE_LOAD debe estar activo (para permitir insmod -f)
+          ./scripts/config --file $CONFIG --enable CONFIG_MODULE_FORCE_LOAD
+          
+          # === Añadir el driver MT7601U ===
+          ./scripts/config --file $CONFIG --module CONFIG_MT7601U
+          ./scripts/config --file $CONFIG --enable CONFIG_WLAN_VENDOR_MEDIATEK
+          
+          # Asegurar dependencias WiFi
+          ./scripts/config --file $CONFIG --enable CONFIG_CFG80211
+          ./scripts/config --file $CONFIG --enable CONFIG_MAC80211
+          ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL
+          ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL_HT
+          
+          # === Aplicar cambios ===
+          yes "" | make ARCH=arm64 O=../out olddefconfig
+          
+          echo "=== Verificación de configuración ==="
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD)" $CONFIG
 
-      - name: Build kernel
+      - name: Build MT7601U module
         run: |
           cd kernel
-          make ARCH=arm64 O=../out -j4 \
+          
+          # Compilar solo el módulo mt7601u
+          # Usamos KBUILD_MODPOST_WARN=1 para permitir símbolos no resueltos
+          # (el module.symvers no está completo sin compilar todo el kernel)
+          KBUILD_MODPOST_WARN=1 make ARCH=arm64 O=../out -j4 \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
             AR=../clang/bin/llvm-ar \
@@ -157,20 +128,35 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
-            Image modules
+            M=drivers/net/wireless/mediatek/mt7601u \
+            modules
 
-      - name: Collect .ko files
+      - name: Verify module
         run: |
-          mkdir -p ko_output
-          find out -name "mt7601u.ko" -exec cp {} ko_output/ \; || true
-          find out -name "mac80211.ko" -exec cp {} ko_output/ \; || true
-          find out -name "cfg80211.ko" -exec cp {} ko_output/ \; || true
-          ls -lh ko_output/ || echo "(ningún .ko generado)"
+          cd kernel
+          KO=../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+          
+          if [ -f "$KO" ]; then
+            echo "=== ¡MÓDULO COMPILADO! ==="
+            ls -lh "$KO"
+            echo ""
+            echo "=== Vermagic del módulo ==="
+            modinfo "$KO" | grep vermagic || true
+            echo ""
+            echo "=== Información del módulo ==="
+            modinfo "$KO" | head -15 || true
+            echo ""
+            echo "=== Verificar modo AP en el .ko ==="
+            strings "$KO" | grep -i "NL80211_IFTYPE_AP" && echo "=== MODO AP PRESENTE ===" || echo "=== ALERTA: Modo AP NO detectado ==="
+          else
+            echo "=== ERROR: mt7601u.ko NO se generó ==="
+            find ../out -name "*.ko" 2>/dev/null | head -20
+            exit 1
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-output
+          name: mt7601u-ap-module
           path: |
-            out/arch/arm64/boot/Image
-            ko_output/*.ko
+            out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko

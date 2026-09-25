@@ -46,11 +46,9 @@ jobs:
             printf '/* PATCH_PHY_TYPES */\n#ifndef MT_PHY_TYPE_CCK\n#define MT_PHY_TYPE_CCK 0\n#endif\n#ifndef MT_PHY_TYPE_OFDM\n#define MT_PHY_TYPE_OFDM 1\n#endif\n#ifndef MT_PHY_TYPE_HT\n#define MT_PHY_TYPE_HT 2\n#endif\n#ifndef MT_PHY_TYPE_HT_GF\n#define MT_PHY_TYPE_HT_GF 3\n#endif\n' > /tmp/phy_types.h
             cat /tmp/phy_types.h $D/init.c > /tmp/init_new.c
             mv /tmp/init_new.c $D/init.c
-            echo "=== init.c con MT_PHY_TYPE_* ==="
-            head -8 $D/init.c
           fi
 
-          # Generar stubs dinámicos EXCLUYENDO trace_mt_mcu_msg_send_cs
+          # Stubs dinámicos excluyendo trace_mt_mcu_msg_send_cs
           grep -ohE 'trace_[a-zA-Z0-9_]+\(' $D/*.c | sed 's/($//' | sort -u | \
             grep -v 'trace_mt_mcu_msg_send_cs' | \
             awk '{print "#define " $0 "(...) do {} while (0)"}' > /tmp/patch_header.txt
@@ -63,25 +61,68 @@ jobs:
               LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
               if [ -n "$LINE" ]; then
                 sed -i "${LINE}r /tmp/patch_header.txt" "$FILE"
-                echo "$f parcheado después de la línea $LINE"
               fi
             fi
           done
 
+          # mac.h con includes básicos
           if ! grep -q "PATCH_MAC_INCLUDES" $D/mac.h; then
             printf '/* PATCH_MAC_INCLUDES */\n#include <linux/types.h>\n#include <linux/skbuff.h>\n#include <linux/ieee80211.h>\n' > /tmp/mac_includes.h
             cat /tmp/mac_includes.h $D/mac.h > /tmp/mac_new.h
             mv /tmp/mac_new.h $D/mac.h
           fi
 
+          # Añadir mac.h a dma.c, phy.c
           for f in dma.c phy.c; do
             FILE=$D/$f
             if [ -f "$FILE" ] && ! grep -q '#include "mac.h"' "$FILE"; then
               LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
               sed -i "${LINE}a #include \"mac.h\"" "$FILE"
-              echo "$f: mac.h añadido después de línea $LINE"
+              echo "$f: mac.h añadido"
             fi
           done
+
+          # Añadir regs.h y mac.h a mac.c, tx.c
+          for f in mac.c tx.c; do
+            FILE=$D/$f
+            if [ -f "$FILE" ]; then
+              if ! grep -q '#include "regs.h"' "$FILE"; then
+                LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
+                sed -i "${LINE}a #include \"regs.h\"" "$FILE"
+                echo "$f: regs.h añadido"
+              fi
+              if ! grep -q '#include "mac.h"' "$FILE"; then
+                LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
+                sed -i "${LINE}a #include \"mac.h\"" "$FILE"
+                echo "$f: mac.h añadido"
+              fi
+            fi
+          done
+
+          echo "=== Verificación ==="
+          echo "--- mac.c includes ---"
+          grep -n "^#include" $D/mac.c
+          echo "--- tx.c includes ---"
+          grep -n "^#include" $D/tx.c
+
+      - name: Debug - buscar macros TXWI_RATE (diagnóstico, no bloquea)
+        continue-on-error: true
+        run: |
+          cd kernel
+          D=drivers/net/wireless/mediatek/mt7601u
+          echo "=== TXWI_RATE en .h del driver ==="
+          grep -rn "TXWI_RATE\|TXWI_ACK_CTL" $D/*.h || echo "NO ENCONTRADO"
+          echo ""
+          echo "=== TXWI_RATE en todo mediatek/ ==="
+          grep -rn "TXWI_RATE\|TXWI_ACK_CTL" drivers/net/wireless/mediatek/ --include="*.h" || echo "NO ENCONTRADO"
+          echo ""
+          echo "=== struct mt76_txwi / mt76_tx_status en todo el árbol ==="
+          grep -rn "struct mt76_txwi\b\|struct mt76_tx_status\b" drivers/net/wireless/mediatek/ --include="*.h" | head -10 || echo "NO ENCONTRADO"
+          echo ""
+          echo "=== Includes actuales de mac.c y tx.c ==="
+          grep -n "^#include" $D/mac.c
+          echo "---"
+          grep -n "^#include" $D/tx.c
 
       - name: Configure kernel (minimal)
         run: |
@@ -97,7 +138,6 @@ jobs:
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "" | make ARCH=arm64 O=../out olddefconfig
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK)" ../out/.config
 
       - name: Build only mt7601u
         run: |

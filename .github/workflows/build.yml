@@ -6,11 +6,9 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Checkout kernel
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: LineageOS/android_kernel_motorola_sm6375
           ref: lineage-23.2
@@ -31,13 +29,46 @@ jobs:
       - name: Patch source
         run: |
           cd kernel
-          sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' drivers/net/wireless/mediatek/mt7601u/init.c
-          sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' drivers/net/wireless/mediatek/mt7601u/Makefile
-          sed -i '/#include <trace\/define_trace.h>/d' drivers/net/wireless/mediatek/mt7601u/trace.h
-          sed -i '/#include "trace.h"/d' drivers/net/wireless/mediatek/mt7601u/trace.h
-          echo '/* PATCH: trace.c vacio */' > drivers/net/wireless/mediatek/mt7601u/trace.c
-          tail -10 drivers/net/wireless/mediatek/mt7601u/trace.h
-          cat drivers/net/wireless/mediatek/mt7601u/Makefile
+          D=drivers/net/wireless/mediatek/mt7601u
+
+          sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
+
+          sed -i 's/^mt7601u-y.*trace\.o.*$/# PATCH: trace.o excluded/' $D/Makefile
+          sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' $D/Makefile
+
+          echo '/* PATCH: trace.c empty */' > $D/trace.c
+          echo '/* PATCH: trace.h empty */' > $D/trace.h
+
+          for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
+            FILE=$D/$f
+            if [ -f "$FILE" ]; then
+              printf '%s\n' \
+                '#define trace_mt_mcu_msg_send(...) do {} while (0)' \
+                '#define trace_mt_submit_urb_sync(...) do {} while (0)' \
+                '#define trace_mt_submit_urb(...) do {} while (0)' \
+                '#define trace_mt_vend_req(...) do {} while (0)' \
+                '#define trace_reg_read(...) do {} while (0)' \
+                '#define trace_reg_write(...) do {} while (0)' \
+                '#define trace_mt_rx(...) do {} while (0)' \
+                '#define trace_mt_tx(...) do {} while (0)' \
+                '#define trace_mt_tx_status_cleaned(...) do {} while (0)' \
+                '#define trace_mt_rx_dma_aggr(...) do {} while (0)' \
+                '#define trace_mt_tx_dma_done(...) do {} while (0)' \
+                '#define trace_mt_bbp_read(...) do {} while (0)' \
+                '#define trace_mt_bbp_write(...) do {} while (0)' \
+                '#define trace_mt_freq_cal_adjust(...) do {} while (0)' \
+                '#define trace_mt_freq_cal_offset(...) do {} while (0)' \
+                '#define trace_mt_read_temp(...) do {} while (0)' \
+                '#define trace_mt_rf_read(...) do {} while (0)' \
+                '#define trace_mt_rf_write(...) do {} while (0)' \
+                '#define trace_mt_temp_mode(...) do {} while (0)' \
+                '#define trace_mt_set_key(...) do {} while (0)' \
+                '#define trace_mt_set_shared_key(...) do {} while (0)' \
+                > /tmp/patch_header.txt
+              cat /tmp/patch_header.txt "$FILE" > /tmp/new_file.c
+              mv /tmp/new_file.c "$FILE"
+            fi
+          done
 
       - name: Config
         run: |
@@ -59,7 +90,7 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
           yes "" | make ARCH=arm64 O=../out olddefconfig
 
-      - name: Build module
+      - name: Build
         run: |
           cd kernel
           make ARCH=arm64 O=../out -j4 \
@@ -82,13 +113,17 @@ jobs:
             M=drivers/net/wireless/mediatek/mt7601u \
             modules
 
-      - name: Verify module
+      - name: Verify
         run: |
           cd kernel
           ls -lh ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep vermagic
+          echo "=== Buscando __tracepoint en el .ko ==="
+          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "__tracepoint" || echo "0 (ninguno, PERFECTO)"
+          echo "=== Buscando debugfs_ en el .ko ==="
+          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "debugfs_create" || echo "0 (ninguno, PERFECTO)"
 
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: mt7601u-ap-module

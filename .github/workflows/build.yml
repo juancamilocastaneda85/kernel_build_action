@@ -44,20 +44,14 @@ jobs:
           printf '/* PATCH: trace.c empty */\n' > $D/trace.c
           printf '/* PATCH: trace.h empty */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
 
-          # Añadir includes básicos a mac.h (para que vea u8, u16, __le32)
-          if ! grep -q "linux/types.h" $D/mac.h; then
-            printf '#include <linux/types.h>\n#include <linux/bitops.h>\n#include <linux/byteorder/generic.h>\n' > /tmp/mac_includes.h
+          # Añadir TODOS los includes necesarios a mac.h
+          if ! grep -q "PATCH_MAC_INCLUDES" $D/mac.h; then
+            printf '/* PATCH_MAC_INCLUDES */\n#include <linux/types.h>\n#include <linux/skbuff.h>\n#include <linux/ieee80211.h>\n#include "mt7601u.h"\n' > /tmp/mac_includes.h
             cat /tmp/mac_includes.h $D/mac.h > /tmp/new_mac.h
             mv /tmp/new_mac.h $D/mac.h
           fi
 
-          # Añadir #include "mac.h" a init.c y dma.c al principio
-          for f in init.c dma.c; do
-            FILE=$D/$f
-            if [ -f "$FILE" ] && ! grep -q '#include "mac.h"' "$FILE"; then
-              sed -i '1i #include "mac.h"' "$FILE"
-            fi
-          done
+          # NO tocar init.c ni dma.c (ya incluyen mac.h por su cuenta)
 
           # Neutralizar macros trace_* en cada .c
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
@@ -93,8 +87,6 @@ jobs:
 
           echo "=== mac.h primeras 10 lineas ==="
           head -10 $D/mac.h
-          echo "=== Makefile final ==="
-          cat $D/Makefile
 
       - name: Config
         run: |

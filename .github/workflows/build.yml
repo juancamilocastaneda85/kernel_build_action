@@ -44,12 +44,18 @@ jobs:
           printf '/* PATCH: trace.c empty */\n' > $D/trace.c
           printf '/* PATCH: trace.h empty */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
 
-          # Insertar #include "mac.h" después del primer #include en init.c y dma.c
+          # Añadir includes básicos a mac.h (para que vea u8, u16, __le32)
+          if ! grep -q "linux/types.h" $D/mac.h; then
+            printf '#include <linux/types.h>\n#include <linux/bitops.h>\n#include <linux/byteorder/generic.h>\n' > /tmp/mac_includes.h
+            cat /tmp/mac_includes.h $D/mac.h > /tmp/new_mac.h
+            mv /tmp/new_mac.h $D/mac.h
+          fi
+
+          # Añadir #include "mac.h" a init.c y dma.c al principio
           for f in init.c dma.c; do
             FILE=$D/$f
             if [ -f "$FILE" ] && ! grep -q '#include "mac.h"' "$FILE"; then
-              LINE=$(grep -n "^#include" "$FILE" | head -1 | cut -d: -f1)
-              sed -i "${LINE}i #include \"mac.h\"" "$FILE"
+              sed -i '1i #include "mac.h"' "$FILE"
             fi
           done
 
@@ -85,12 +91,10 @@ jobs:
             fi
           done
 
+          echo "=== mac.h primeras 10 lineas ==="
+          head -10 $D/mac.h
           echo "=== Makefile final ==="
           cat $D/Makefile
-          echo "=== init.c primeras 5 lineas ==="
-          head -5 $D/init.c
-          echo "=== dma.c primeras 5 lineas ==="
-          head -5 $D/dma.c
 
       - name: Config
         run: |

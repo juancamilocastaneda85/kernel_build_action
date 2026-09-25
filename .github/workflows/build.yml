@@ -38,10 +38,10 @@ jobs:
           echo "===== Makefile del mt7601u ====="
           cat drivers/net/wireless/mediatek/mt7601u/Makefile
           echo ""
-          echo "===== Archivos que incluyen trace.h ====="
-          grep -rn '#include "trace.h"' drivers/net/wireless/mediatek/mt7601u/ || echo "(ninguno)"
+          echo "===== trace.h: línea 392 (contexto) ====="
+          sed -n '385,400p' drivers/net/wireless/mediatek/mt7601u/trace.h
 
-      - name: Patch Kernel Source (AP Mode + trace neutralizado)
+      - name: Patch Kernel Source (AP Mode + trace fix v2)
         run: |
           cd kernel
 
@@ -51,34 +51,24 @@ jobs:
           if grep -q "wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);" "$F"; then
             sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
             echo "=== Parche AP aplicado ==="
-          else
-            echo "=== Parche AP no aplicado (línea no encontrada) ==="
           fi
           
-          echo ""
-          echo "=== Verificación parche AP ==="
           grep -n "interface_modes" "$F"
           
-          # === Parche 2: neutralizar trace.h y trace.c ===
-          T=drivers/net/wireless/mediatek/mt7601u/trace.h
-          C=drivers/net/wireless/mediatek/mt7601u/trace.c
+          # === Parche 2: fix TRACE_INCLUDE_PATH en Makefile ===
+          M=drivers/net/wireless/mediatek/mt7601u/Makefile
           
-          if [ -f "$T" ]; then
-            echo "/* PATCH: trace.h neutralizado para build standalone */" > "$T"
-            echo "#ifndef _MT7601U_TRACE_H" >> "$T"
-            echo "#define _MT7601U_TRACE_H" >> "$T"
-            echo "#endif" >> "$T"
-            echo "=== trace.h neutralizado ==="
-          fi
-          
-          if [ -f "$C" ]; then
-            echo "/* PATCH: trace.c neutralizado */" > "$C"
-            echo "=== trace.c neutralizado ==="
+          if ! grep -q "TRACE_INCLUDE_PATH" "$M"; then
+            echo "" >> "$M"
+            echo "# PATCH: fix trace include path for standalone build" >> "$M"
+            echo 'CFLAGS_trace.o := -I$(src)' >> "$M"
+            echo 'ccflags-y += -DTRACE_INCLUDE_PATH=drivers/net/wireless/mediatek/mt7601u' >> "$M"
+            echo "=== Parche TRACE_INCLUDE_PATH aplicado ==="
           fi
           
           echo ""
-          echo "=== Makefile del mt7601u (final) ==="
-          cat drivers/net/wireless/mediatek/mt7601u/Makefile
+          echo "=== Makefile final ==="
+          cat "$M"
 
       - name: Prepare Kernel Config
         run: |

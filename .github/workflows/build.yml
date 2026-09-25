@@ -50,7 +50,7 @@ jobs:
           F=drivers/power/supply/qcom/smb1398-charger.c
           echo "=== ANTES ==="
           grep -n "of_device_get_match_data" $F
-          sed -i 's/(int)of_device_get_match_data(chip->dev)/(int)(intptr_t)of_device_get_match_data(chip->dev)/' $F
+          sed -i 's/(int)of_device_get_match_data(chip->dev)/(int)(uintptr_t)of_device_get_match_data(chip->dev)/' $F
           echo "=== DESPUÉS ==="
           grep -n "of_device_get_match_data" $F
 

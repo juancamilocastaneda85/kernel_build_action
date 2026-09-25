@@ -34,21 +34,39 @@ jobs:
           echo "===== init.c: interface_modes ====="
           grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c || true
           echo ""
+          echo "===== ¿MT_PHY_TYPE_* existen en algún header? ====="
+          grep -rn "MT_PHY_TYPE_CCK\|MT_PHY_TYPE_OFDM" drivers/net/wireless/mediatek/mt7601u/*.h || echo "(no encontrados en headers)"
+          echo ""
           echo "===== trace_* usados ====="
           grep -rhoE "trace_[a-z_]+\(" drivers/net/wireless/mediatek/mt7601u/*.c 2>/dev/null | sort -u || true
-          echo ""
-          echo "===== debugfs usados ====="
-          grep -rhoE "mt7601u_debugfs_[a-z_]+\(" drivers/net/wireless/mediatek/mt7601u/*.c 2>/dev/null | sort -u || true
 
       - name: Patch source
         run: |
           cd kernel
           F=drivers/net/wireless/mediatek/mt7601u/init.c
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
+
           printf '/* PATCH: trace.h vacio */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > drivers/net/wireless/mediatek/mt7601u/trace.h
           echo '/* PATCH: trace.c vacio */' > drivers/net/wireless/mediatek/mt7601u/trace.c
+
           M=drivers/net/wireless/mediatek/mt7601u/Makefile
           sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' "$M"
+
+          # === Fix: añadir MT_PHY_TYPE_* a mac.h si no existen ===
+          MAC_H=drivers/net/wireless/mediatek/mt7601u/mac.h
+          if [ -f "$MAC_H" ] && ! grep -q "MT_PHY_TYPE_CCK" "$MAC_H"; then
+            printf '\n#ifndef MT_PHY_TYPE_CCK\n#define MT_PHY_TYPE_CCK 0\n#endif\n#ifndef MT_PHY_TYPE_OFDM\n#define MT_PHY_TYPE_OFDM 1\n#endif\n#ifndef MT_PHY_TYPE_HT\n#define MT_PHY_TYPE_HT 2\n#endif\n#ifndef MT_PHY_TYPE_HT_GF\n#define MT_PHY_TYPE_HT_GF 3\n#endif\n' >> "$MAC_H"
+            echo "=== MT_PHY_TYPE_* añadidos a mac.h ==="
+          else
+            echo "=== MT_PHY_TYPE_* ya existen en mac.h o mac.h no encontrado ==="
+          fi
+
+          # Verificar que init.c incluya mac.h
+          if ! grep -q '#include "mac.h"' "$F"; then
+            printf '#include "mac.h"\n' >> "$F"
+            echo "=== #include \"mac.h\" añadido a init.c ==="
+          fi
+
           echo "=== Makefile final ==="
           cat "$M"
 

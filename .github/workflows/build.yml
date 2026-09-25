@@ -6,9 +6,11 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - uses: actions/checkout@v4
+      - name: Checkout kernel
+        uses: actions/checkout@v4
         with:
           repository: LineageOS/android_kernel_motorola_sm6375
           ref: lineage-23.2
@@ -32,12 +34,19 @@ jobs:
           D=drivers/net/wireless/mediatek/mt7601u
 
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
-
           sed -i 's/^mt7601u-y.*trace\.o.*$/# PATCH: trace.o excluded/' $D/Makefile
           sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' $D/Makefile
 
-          echo '/* PATCH: trace.c empty */' > $D/trace.c
-          echo '/* PATCH: trace.h empty */' > $D/trace.h
+          printf '/* PATCH: trace.c empty */\n' > $D/trace.c
+          printf '/* PATCH: trace.h empty */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
+
+          printf '\n# PATCH: MT_PHY_TYPE defines\n' >> $D/Makefile
+          printf 'ccflags-y += -DMT_PHY_TYPE_CCK=0\n' >> $D/Makefile
+          printf 'ccflags-y += -DMT_PHY_TYPE_OFDM=1\n' >> $D/Makefile
+          printf 'ccflags-y += -DMT_PHY_TYPE_HT=2\n' >> $D/Makefile
+          printf 'ccflags-y += -DMT_PHY_TYPE_HT_GF=3\n' >> $D/Makefile
+          printf '\n# PATCH: Forzar include de mac.h en dma.c\n' >> $D/Makefile
+          printf 'CFLAGS_dma.o := -include $(srctree)/%s/mac.h\n' "$D" >> $D/Makefile
 
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
             FILE=$D/$f
@@ -69,6 +78,9 @@ jobs:
               mv /tmp/new_file.c "$FILE"
             fi
           done
+
+          echo "=== Makefile final ==="
+          cat $D/Makefile
 
       - name: Config
         run: |
@@ -119,9 +131,9 @@ jobs:
           ls -lh ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep vermagic
           echo "=== Buscando __tracepoint en el .ko ==="
-          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "__tracepoint" || echo "0 (ninguno, PERFECTO)"
-          echo "=== Buscando debugfs_ en el .ko ==="
-          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "debugfs_create" || echo "0 (ninguno, PERFECTO)"
+          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "__tracepoint" || echo "0 (ninguno)"
+          echo "=== Buscando debugfs_create en el .ko ==="
+          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "debugfs_create" || echo "0 (ninguno)"
 
       - name: Upload
         uses: actions/upload-artifact@v4

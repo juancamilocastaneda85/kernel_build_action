@@ -38,10 +38,11 @@ jobs:
           cd kernel
           F=drivers/firmware/qcom_scm.c
           echo "=== ANTES ==="
-          grep -n "initcall" $F || echo "(no encontrado)"
-          sed -i 's|^early_initcall(scm_mem_protection_init);|/* PATCH: early_initcall disabled for module build */|' $F
+          grep -n "initcall\|scm_mem_protection_init" $F
+          sed -i 's|^early_initcall(scm_mem_protection_init);|/* PATCH: disabled for module build */|' $F
+          sed -i 's|^static int __init scm_mem_protection_init(void)|static int __init __maybe_unused scm_mem_protection_init(void)|' $F
           echo "=== DESPUÉS ==="
-          grep -n "initcall" $F
+          grep -n "initcall\|scm_mem_protection_init" $F
 
       - name: Configure kernel
         run: |

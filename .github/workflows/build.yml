@@ -63,13 +63,33 @@ jobs:
           sed -i '1i #include <linux/fb.h>' drivers/input/touchscreen/chipone_tddi_v2_mmi/cts_driver.c
           sed -i '1i #ifndef FB_EARLY_EVENT_BLANK\n#define FB_EARLY_EVENT_BLANK 0x10\n#endif' drivers/input/touchscreen/chipone_tddi_v2_mmi/cts_driver.c
 
-          # 7. i2c-qcom-geni.c (FIX COMPLETO)
-          sed -i 's/gi2c->base/gi2c->se.base/g' drivers/i2c/busses/i2c-qcom-geni.c
-          if ! grep -q "geni_write_reg" drivers/i2c/busses/i2c-qcom-geni.c; then
-            sed -i '1i static inline void geni_write_reg(u32 val, void __iomem *base) { writel_relaxed(val, base); }' drivers/i2c/busses/i2c-qcom-geni.c
+          # 7. i2c-qcom-geni.c — FIX DEFINITIVO
+          F=drivers/i2c/busses/i2c-qcom-geni.c
+          # 7a. gi2c->base -> gi2c->se.base (solo en la llamada a geni_write_reg)
+          sed -i 's/gi2c->noise_rjct_sda << 3, gi2c->base,/gi2c->noise_rjct_sda << 3, gi2c->se.base,/' "$F"
+          # 7b. inyectar definición tras el último #include
+          if ! grep -q "static inline void geni_write_reg" "$F"; then
+            LINE=$(grep -n "^#include" "$F" | tail -1 | cut -d: -f1)
+            sed -i "${LINE}a\\
+          \\
+          /* PATCH: geni_write_reg missing in this tree */\\
+          static inline void geni_write_reg(u32 val, void __iomem *base)\\
+          {\\
+              writel_relaxed(val, base);\\
+          }" "$F"
           fi
+          echo "=== Verificación i2c-qcom-geni ==="
+          grep -n "geni_write_reg\|gi2c->base" "$F" || echo "(sin gi2c->base, OK)"
 
-          # 8. fb.h global
+          # 8. mac80211 — eliminar rc80211_minstrel.o duplicado
+          M=net/mac80211/Makefile
+          sed -i '/^mac80211-y += rc80211_minstrel\.o$/d' "$M"
+          sed -i '/^rc80211_minstrel-y\s*:=\s*rc80211_minstrel_ht\.o/d' "$M"
+          sed -i '/^rc80211_minstrel-$(CONFIG_MAC80211_RC_MINSTREL)\s*:=\s*rc80211_minstrel_ht\.o/d' "$M"
+          echo "=== mac80211 Makefile tras patch ==="
+          grep -n "minstrel" "$M" || echo "(sin minstrel — ¡ojo! revisar)"
+
+          # 9. fb.h global
           sed -i '/^#define FB_EVENT_BLANK/a #ifndef FB_EARLY_EVENT_BLANK\n#define FB_EARLY_EVENT_BLANK  0x10\n#endif' include/linux/fb.h
 
           echo "Kernel source patched."
@@ -81,7 +101,7 @@ jobs:
           make ARCH=arm64 O=../out defconfig
           cat arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config >> ../out/.config || true
 
-          # ---- WiFi / antena: NO TOCAR, DEBE SOBREVIVIR ----
+          # WiFi / antena: NO TOCAR
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
@@ -89,7 +109,7 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
           ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
 
-          # ---- Quitar solo lo que molesta a la verificación ----
+          # Quitar lo que molesta
           ./scripts/config --file ../out/.config --disable CONFIG_LTO
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG_THIN
@@ -100,7 +120,6 @@ jobs:
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-g26b07e8cb7f6"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
 
-          # ---- Resto de drivers MMI que el árbol pide ----
           ./scripts/config --file ../out/.config --enable CONFIG_SCHED_WALT
           ./scripts/config --file ../out/.config --enable CONFIG_SCHED_CASS
           ./scripts/config --file ../out/.config --enable CONFIG_TASKS_TRACE_RCU
@@ -110,14 +129,11 @@ jobs:
 
           yes "1" | make ARCH=arm64 O=../out olddefconfig || true
 
-      - name: Verify .config (WiFi debe estar vivo)
+      - name: Verify .config
         run: |
           cd kernel
-          echo "=== WiFi / antena (DEBE estar activo) ==="
+          echo "=== WiFi / antena ==="
           grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|MAC80211|MAC80211_RC_MINSTREL|CFG80211)" ../out/.config || echo "!!! FALTA WIFI !!!"
-          echo ""
-          echo "=== Stack MMI (informativo) ==="
-          grep -E "CONFIG_(SND_SOC_FS1815|CAMERA_CCI_INTF|INPUT_GOODIX_FOD_MMI|DRM_PANEL_NOTIFIER|TOUCHSCREEN_CHIPONE)" ../out/.config || echo "(algunos no presentes, no bloquean)"
           echo ""
           echo "=== Verify OK ==="
           exit 0

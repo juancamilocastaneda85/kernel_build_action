@@ -35,16 +35,13 @@ jobs:
           echo "===== init.c: interface_modes ====="
           grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c
           echo ""
-          echo "===== Makefile del mt7601u ====="
-          cat drivers/net/wireless/mediatek/mt7601u/Makefile
+          echo "===== trace.h: últimas 10 líneas ====="
+          tail -10 drivers/net/wireless/mediatek/mt7601u/trace.h
           echo ""
-          echo "===== MT_PHY_TYPE_* en headers ====="
-          grep -rn "MT_PHY_TYPE" drivers/net/wireless/mediatek/mt7601u/*.h | head -10 || echo "(no encontrados)"
-          echo ""
-          echo "===== trace_* usados en .c ====="
-          grep -rn "trace_mt\|trace_reg" drivers/net/wireless/mediatek/mt7601u/*.c | grep -v trace.c | head -20
+          echo "===== trace.c: primeras 20 líneas ====="
+          head -20 drivers/net/wireless/mediatek/mt7601u/trace.c
 
-      - name: Patch Kernel Source (AP Mode + trace stubs)
+      - name: Patch Kernel Source (AP Mode + trace fix v3)
         run: |
           cd kernel
 
@@ -56,52 +53,25 @@ jobs:
           fi
           grep -n "interface_modes" "$F"
           
-          # === Parche 2: reemplazar trace.h con stubs ===
+          # === Parche 2: eliminar includes problemáticos de trace.h ===
           T=drivers/net/wireless/mediatek/mt7601u/trace.h
           
-          cat > "$T" << 'TRACE_H_EOF'
-          /* SPDX-License-Identifier: GPL-2.0-only */
-          /* PATCH: trace.h reemplazado con stubs vacíos */
+          echo ""
+          echo "=== trace.h: últimas 15 líneas ANTES ==="
+          tail -15 "$T"
           
-          #ifndef __MT7601U_TRACE_H
-          #define __MT7601U_TRACE_H
+          sed -i '/#include <trace\/define_trace.h>/d' "$T"
+          sed -i '/#include "trace.h"/d' "$T"
           
-          #include "mt7601u.h"
-          
-          /* Stubs vacíos para todas las macros trace_* usadas por el driver */
-          #define trace_mt_mcu_msg_send(dev, skb, csum, need_resp)  do {} while (0)
-          #define trace_mt_mcu_msg_send_cs(dev, cmd, csum, need_resp)  do {} while (0)
-          #define trace_mt_submit_urb_sync(dev, pipe, len)  do {} while (0)
-          #define trace_mt_submit_urb(dev, urb)  do {} while (0)
-          #define trace_mt_vend_req(dev, pipe, req, req_type, val, offset, buf, len, ret)  do {} while (0)
-          #define trace_reg_read(dev, offset, val)  do {} while (0)
-          #define trace_reg_write(dev, offset, val)  do {} while (0)
-          #define trace_mt_rx(dev, skb)  do {} while (0)
-          #define trace_mt_tx(dev, skb)  do {} while (0)
-          
-          /* Valores por defecto para PHY types (por si no están en headers) */
-          #ifndef MT_PHY_TYPE_CCK
-          #define MT_PHY_TYPE_CCK   0
-          #endif
-          #ifndef MT_PHY_TYPE_OFDM
-          #define MT_PHY_TYPE_OFDM  1
-          #endif
-          #ifndef MT_PHY_TYPE_HT
-          #define MT_PHY_TYPE_HT    2
-          #endif
-          #ifndef MT_PHY_TYPE_HT_GF
-          #define MT_PHY_TYPE_HT_GF 3
-          #endif
-          
-          #endif /* __MT7601U_TRACE_H */
-          TRACE_H_EOF
-          
-          echo "=== trace.h reemplazado ==="
-          head -30 "$T"
+          echo ""
+          echo "=== trace.h: últimas 15 líneas DESPUÉS ==="
+          tail -15 "$T"
           
           # === Parche 3: neutralizar trace.c ===
           C=drivers/net/wireless/mediatek/mt7601u/trace.c
-          echo "/* PATCH: trace.c neutralizado */" > "$C"
+          cat > "$C" << 'TRACE_C_EOF'
+          /* PATCH: trace.c neutralizado - tracing deshabilitado para build standalone */
+          TRACE_C_EOF
           echo "=== trace.c neutralizado ==="
 
       - name: Prepare Kernel Config

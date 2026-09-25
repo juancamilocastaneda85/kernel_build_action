@@ -34,11 +34,11 @@ jobs:
           echo "===== init.c: interface_modes ====="
           grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c || true
           echo ""
-          echo "===== ¿MT_PHY_TYPE_* existen en algún header? ====="
-          grep -rn "MT_PHY_TYPE_CCK\|MT_PHY_TYPE_OFDM" drivers/net/wireless/mediatek/mt7601u/*.h || echo "(no encontrados en headers)"
+          echo "===== ¿MT_PHY_TYPE_* existen en headers? ====="
+          grep -rn "MT_PHY_TYPE_CCK\|MT_PHY_TYPE_OFDM" drivers/net/wireless/mediatek/mt7601u/*.h || echo "(no encontrados)"
           echo ""
-          echo "===== trace_* usados ====="
-          grep -rhoE "trace_[a-z_]+\(" drivers/net/wireless/mediatek/mt7601u/*.c 2>/dev/null | sort -u || true
+          echo "===== mcu.c: definición de trace_mt_mcu_msg_send_cs ====="
+          grep -n "trace_mt_mcu_msg_send_cs" drivers/net/wireless/mediatek/mt7601u/mcu.c || true
 
       - name: Patch source
         run: |
@@ -52,21 +52,27 @@ jobs:
           M=drivers/net/wireless/mediatek/mt7601u/Makefile
           sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' "$M"
 
-          # === Fix: añadir MT_PHY_TYPE_* a mac.h si no existen ===
-          MAC_H=drivers/net/wireless/mediatek/mt7601u/mac.h
-          if [ -f "$MAC_H" ] && ! grep -q "MT_PHY_TYPE_CCK" "$MAC_H"; then
-            printf '\n#ifndef MT_PHY_TYPE_CCK\n#define MT_PHY_TYPE_CCK 0\n#endif\n#ifndef MT_PHY_TYPE_OFDM\n#define MT_PHY_TYPE_OFDM 1\n#endif\n#ifndef MT_PHY_TYPE_HT\n#define MT_PHY_TYPE_HT 2\n#endif\n#ifndef MT_PHY_TYPE_HT_GF\n#define MT_PHY_TYPE_HT_GF 3\n#endif\n' >> "$MAC_H"
-            echo "=== MT_PHY_TYPE_* añadidos a mac.h ==="
-          else
-            echo "=== MT_PHY_TYPE_* ya existen en mac.h o mac.h no encontrado ==="
-          fi
+          # Añadir MT_PHY_TYPE_* después del último #include en init.c
+          LINE=$(grep -n "^#include" "$F" | tail -1 | cut -d: -f1)
+          sed -i "${LINE}a\\
+\\
+/* PATCH: MT_PHY_TYPE_* */\\
+#ifndef MT_PHY_TYPE_CCK\\
+#define MT_PHY_TYPE_CCK 0\\
+#endif\\
+#ifndef MT_PHY_TYPE_OFDM\\
+#define MT_PHY_TYPE_OFDM 1\\
+#endif\\
+#ifndef MT_PHY_TYPE_HT\\
+#define MT_PHY_TYPE_HT 2\\
+#endif\\
+#ifndef MT_PHY_TYPE_HT_GF\\
+#define MT_PHY_TYPE_HT_GF 3\\
+#endif" "$F"
 
-          # Verificar que init.c incluya mac.h
-          if ! grep -q '#include "mac.h"' "$F"; then
-            printf '#include "mac.h"\n' >> "$F"
-            echo "=== #include \"mac.h\" añadido a init.c ==="
-          fi
-
+          echo "=== init.c: primeras 25 líneas ==="
+          head -25 "$F"
+          echo ""
           echo "=== Makefile final ==="
           cat "$M"
 
@@ -79,7 +85,6 @@ jobs:
               printf '%s\n' \
                 '/* PATCH-TRACE: neutralizar macros trace_* */' \
                 '#define trace_mt_mcu_msg_send(...) do {} while (0)' \
-                '#define trace_mt_mcu_msg_send_cs(...) do {} while (0)' \
                 '#define trace_mt_submit_urb_sync(...) do {} while (0)' \
                 '#define trace_mt_submit_urb(...) do {} while (0)' \
                 '#define trace_mt_vend_req(...) do {} while (0)' \
@@ -126,13 +131,10 @@ jobs:
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
           yes "" | make ARCH=arm64 O=../out olddefconfig
-          echo "=== Config final ==="
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD)" ../out/.config || true
 
       - name: Build module
         run: |
           cd kernel
-          echo "=== modules_prepare ==="
           make ARCH=arm64 O=../out -j4 \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
@@ -163,15 +165,11 @@ jobs:
             echo "=== ¡MÓDULO COMPILADO! ==="
             ls -lh "$KO"
             modinfo "$KO" | grep vermagic || true
-            modinfo "$KO" | head -15 || true
             if strings "$KO" | grep -q "NL80211_IFTYPE_AP"; then
               echo "=== MODO AP PRESENTE ==="
-            else
-              echo "=== ALERTA: Modo AP NO detectado ==="
             fi
           else
             echo "=== ERROR: mt7601u.ko NO se generó ==="
-            find ../out -name "*.ko" 2>/dev/null | head -20
             exit 1
           fi
 

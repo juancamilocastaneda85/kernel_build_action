@@ -120,7 +120,11 @@ jobs:
             IPA_WDI_UNIFIED_API \
             USB_BAM \
             MSM_SPSS_UTILS \
-            MSM_BOOT_STATS ; do
+            MSM_BOOT_STATS \
+            QTI_HW_KEY_MANAGER \
+            QTI_CRYPTO_COMMON \
+            QTI_CRYPTO_TZ \
+            QTI_CRYPTO_FDE ; do
             ./scripts/config --file ../out/.config --disable CONFIG_$opt
           done
           ./scripts/config --file ../out/.config --enable CONFIG_QCOM_SMEM
@@ -134,7 +138,7 @@ jobs:
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "" | make ARCH=arm64 O=../out olddefconfig
           echo "=== Config final ==="
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|QCOM_SMEM|SCSI_UFS|IPA3|MSM_PIL)" ../out/.config
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|QCOM_SMEM|QTI_HW_KEY|QTI_CRYPTO)" ../out/.config
 
       - name: Build full kernel modules
         run: |

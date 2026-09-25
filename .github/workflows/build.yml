@@ -1,4 +1,4 @@
-name: Build MT7601U AP Driver
+name: Build MT7601U AP Driver (Full Kernel Build)
 on:
   workflow_dispatch:
 
@@ -6,11 +6,9 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Checkout kernel
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: LineageOS/android_kernel_motorola_sm6375
           ref: lineage-23.2
@@ -28,66 +26,16 @@ jobs:
           tar -xzf clang.tar.gz -C clang
           rm clang.tar.gz
 
-      - name: Patch source
+      - name: Patch for AP mode
         run: |
           cd kernel
           D=drivers/net/wireless/mediatek/mt7601u
 
-          # Modo AP
+          # Parche AP
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
+          grep -n "interface_modes" $D/init.c
 
-          # Quitar trace.o y debugfs.o del Makefile
-          sed -i 's/^mt7601u-y.*trace\.o.*$/# PATCH: trace.o excluded/' $D/Makefile
-          sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' $D/Makefile
-
-          # Vaciar trace.c y trace.h
-          printf '/* PATCH: trace.c empty */\n' > $D/trace.c
-          printf '/* PATCH: trace.h empty */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
-
-          # Crear header paraguas que incluye TODO en orden correcto
-          printf '#ifndef __MT7601U_UMBRELLA_H\n#define __MT7601U_UMBRELLA_H\n#include <linux/types.h>\n#include <linux/kernel.h>\n#include <linux/skbuff.h>\n#include <linux/ieee80211.h>\n#include "mt7601u.h"\n#include "mac.h"\n#endif\n' > $D/mt7601u_umbrella.h
-
-          # Forzar el paraguas en init.c y dma.c (vía Makefile)
-          printf '\n# PATCH: umbrella header para init.c y dma.c\n' >> $D/Makefile
-          printf 'CFLAGS_init.o := -include $(srctree)/%s/mt7601u_umbrella.h\n' "$D" >> $D/Makefile
-          printf 'CFLAGS_dma.o := -include $(srctree)/%s/mt7601u_umbrella.h\n' "$D" >> $D/Makefile
-
-          # Neutralizar macros trace_* en cada .c
-          for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
-            FILE=$D/$f
-            if [ -f "$FILE" ]; then
-              printf '%s\n' \
-                '#define trace_mt_mcu_msg_send(...) do {} while (0)' \
-                '#define trace_mt_submit_urb_sync(...) do {} while (0)' \
-                '#define trace_mt_submit_urb(...) do {} while (0)' \
-                '#define trace_mt_vend_req(...) do {} while (0)' \
-                '#define trace_reg_read(...) do {} while (0)' \
-                '#define trace_reg_write(...) do {} while (0)' \
-                '#define trace_mt_rx(...) do {} while (0)' \
-                '#define trace_mt_tx(...) do {} while (0)' \
-                '#define trace_mt_tx_status_cleaned(...) do {} while (0)' \
-                '#define trace_mt_rx_dma_aggr(...) do {} while (0)' \
-                '#define trace_mt_tx_dma_done(...) do {} while (0)' \
-                '#define trace_mt_bbp_read(...) do {} while (0)' \
-                '#define trace_mt_bbp_write(...) do {} while (0)' \
-                '#define trace_mt_freq_cal_adjust(...) do {} while (0)' \
-                '#define trace_mt_freq_cal_offset(...) do {} while (0)' \
-                '#define trace_mt_read_temp(...) do {} while (0)' \
-                '#define trace_mt_rf_read(...) do {} while (0)' \
-                '#define trace_mt_rf_write(...) do {} while (0)' \
-                '#define trace_mt_temp_mode(...) do {} while (0)' \
-                '#define trace_mt_set_key(...) do {} while (0)' \
-                '#define trace_mt_set_shared_key(...) do {} while (0)' \
-                > /tmp/patch_header.txt
-              cat /tmp/patch_header.txt "$FILE" > /tmp/new_file.c
-              mv /tmp/new_file.c "$FILE"
-            fi
-          done
-
-          echo "=== Makefile final ==="
-          cat $D/Makefile
-
-      - name: Config
+      - name: Configure kernel
         run: |
           cd kernel
           mkdir -p ../out
@@ -95,30 +43,20 @@ jobs:
           cat arch/arm64/configs/vendor/holi_GKI.config >> ../out/.config
           cat arch/arm64/configs/vendor/holi_consolidate.config >> ../out/.config
           cat arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config >> ../out/.config
-          ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
-          ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
-          ./scripts/config --file ../out/.config --enable CONFIG_MODVERSIONS
-          ./scripts/config --file ../out/.config --enable CONFIG_MODULE_FORCE_LOAD
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
+          ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
+          ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "" | make ARCH=arm64 O=../out olddefconfig
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK)" ../out/.config
 
-      - name: Build
+      - name: Build kernel modules (full)
         run: |
           cd kernel
-          make ARCH=arm64 O=../out -j4 \
-            CC=../clang/bin/clang \
-            LD=../clang/bin/ld.lld \
-            AR=../clang/bin/llvm-ar \
-            NM=../clang/bin/llvm-nm \
-            OBJCOPY=../clang/bin/llvm-objcopy \
-            OBJDUMP=../clang/bin/llvm-objdump \
-            STRIP=../clang/bin/llvm-strip \
-            modules_prepare
           KBUILD_MODPOST_WARN=1 make ARCH=arm64 O=../out -j4 \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
@@ -127,21 +65,31 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
-            M=drivers/net/wireless/mediatek/mt7601u \
             modules
 
-      - name: Verify
+      - name: Verify module
         run: |
           cd kernel
-          ls -lh ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
-          modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep vermagic
-          echo "=== __tracepoint ==="
-          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "__tracepoint" || echo "0"
-          echo "=== debugfs_create ==="
-          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -c "debugfs_create" || echo "0"
+          KO=../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+          if [ -f "$KO" ]; then
+            echo "=== MODULO COMPILADO ==="
+            ls -lh "$KO"
+            modinfo "$KO" | grep vermagic
+            if strings "$KO" | grep -q "NL80211_IFTYPE_AP"; then
+              echo "=== MODO AP PRESENTE ==="
+            fi
+            echo "=== __tracepoint ==="
+            strings "$KO" | grep -c "__tracepoint" || echo "0"
+            echo "=== debugfs_create ==="
+            strings "$KO" | grep -c "debugfs_create" || echo "0"
+          else
+            echo "=== mt7601u.ko NO generado ==="
+            find ../out -name "mt7601u.ko" 2>/dev/null
+            exit 1
+          fi
 
-      - name: Upload
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mt7601u-ap-module
+          name: mt7601u-module
           path: out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko

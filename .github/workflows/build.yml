@@ -44,13 +44,14 @@ jobs:
           printf '/* PATCH: trace.c empty */\n' > $D/trace.c
           printf '/* PATCH: trace.h empty */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
 
-          # Forzar include de mac.h en init.c (para MT_PHY_TYPE_*)
-          printf '\n# PATCH: Forzar include de mac.h en init.c\n' >> $D/Makefile
-          printf 'CFLAGS_init.o := -include $(srctree)/%s/mac.h\n' "$D" >> $D/Makefile
-
-          # Forzar include de mac.h en dma.c (para struct mt7601u_rxwi)
-          printf '\n# PATCH: Forzar include de mac.h en dma.c\n' >> $D/Makefile
-          printf 'CFLAGS_dma.o := -include $(srctree)/%s/mac.h\n' "$D" >> $D/Makefile
+          # Insertar #include "mac.h" después del primer #include en init.c y dma.c
+          for f in init.c dma.c; do
+            FILE=$D/$f
+            if [ -f "$FILE" ] && ! grep -q '#include "mac.h"' "$FILE"; then
+              LINE=$(grep -n "^#include" "$FILE" | head -1 | cut -d: -f1)
+              sed -i "${LINE}i #include \"mac.h\"" "$FILE"
+            fi
+          done
 
           # Neutralizar macros trace_* en cada .c
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
@@ -86,6 +87,10 @@ jobs:
 
           echo "=== Makefile final ==="
           cat $D/Makefile
+          echo "=== init.c primeras 5 lineas ==="
+          head -5 $D/init.c
+          echo "=== dma.c primeras 5 lineas ==="
+          head -5 $D/dma.c
 
       - name: Config
         run: |

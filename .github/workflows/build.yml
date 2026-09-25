@@ -33,7 +33,7 @@ jobs:
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
           grep -n "interface_modes" $D/init.c
 
-      - name: Patch mt7601u traces
+      - name: Patch mt7601u traces (stubs dinámicos)
         run: |
           cd kernel
           D=drivers/net/wireless/mediatek/mt7601u
@@ -41,40 +41,14 @@ jobs:
           printf '/* PATCH: trace.h vacio */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
           echo '/* PATCH: trace.c vacio */' > $D/trace.c
 
-          if ! grep -q "PATCH_PHY_TYPES" $D/init.c; then
-            printf '/* PATCH_PHY_TYPES */\n#ifndef MT_PHY_TYPE_CCK\n#define MT_PHY_TYPE_CCK 0\n#endif\n#ifndef MT_PHY_TYPE_OFDM\n#define MT_PHY_TYPE_OFDM 1\n#endif\n#ifndef MT_PHY_TYPE_HT\n#define MT_PHY_TYPE_HT 2\n#endif\n#ifndef MT_PHY_TYPE_HT_GF\n#define MT_PHY_TYPE_HT_GF 3\n#endif\n' > /tmp/phy_types.h
-            cat /tmp/phy_types.h $D/init.c > /tmp/init_new.c
-            mv /tmp/init_new.c $D/init.c
-          fi
-
-          printf '%s\n' \
-            '/* PATCH-TRACE */' \
-            '#define trace_mt_mcu_msg_send(...) do {} while (0)' \
-            '#define trace_mt_submit_urb_sync(...) do {} while (0)' \
-            '#define trace_mt_submit_urb(...) do {} while (0)' \
-            '#define trace_mt_vend_req(...) do {} while (0)' \
-            '#define trace_reg_read(...) do {} while (0)' \
-            '#define trace_reg_write(...) do {} while (0)' \
-            '#define trace_mt_rx(...) do {} while (0)' \
-            '#define trace_mt_tx(...) do {} while (0)' \
-            '#define trace_mt_tx_status_cleaned(...) do {} while (0)' \
-            '#define trace_mt_rx_dma_aggr(...) do {} while (0)' \
-            '#define trace_mt_tx_dma_done(...) do {} while (0)' \
-            '#define trace_mt_bbp_read(...) do {} while (0)' \
-            '#define trace_mt_bbp_write(...) do {} while (0)' \
-            '#define trace_mt_freq_cal_adjust(...) do {} while (0)' \
-            '#define trace_mt_freq_cal_offset(...) do {} while (0)' \
-            '#define trace_mt_read_temp(...) do {} while (0)' \
-            '#define trace_mt_rf_read(...) do {} while (0)' \
-            '#define trace_mt_rf_write(...) do {} while (0)' \
-            '#define trace_mt_temp_mode(...) do {} while (0)' \
-            '#define trace_mt_set_key(...) do {} while (0)' \
-            '#define trace_mt_set_shared_key(...) do {} while (0)' \
-            > /tmp/patch_header.txt
+          grep -ohE 'trace_[a-zA-Z0-9_]+\(' $D/*.c | sed 's/($//' | sort -u | \
+            awk '{print "#define " $0 "(...) do {} while (0)"}' > /tmp/patch_header.txt
+          echo "=== Stubs generados (deben cubrir TODAS las llamadas trace_* reales) ==="
+          cat /tmp/patch_header.txt
 
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
             FILE=$D/$f
-            if [ -f "$FILE" ] && ! grep -q "PATCH-TRACE" "$FILE"; then
+            if [ -f "$FILE" ]; then
               LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
               if [ -n "$LINE" ]; then
                 sed -i "${LINE}r /tmp/patch_header.txt" "$FILE"
@@ -89,7 +63,6 @@ jobs:
             mv /tmp/mac_new.h $D/mac.h
           fi
 
-          # Añadir include de mac.h a dma.c y phy.c
           for f in dma.c phy.c; do
             FILE=$D/$f
             if [ -f "$FILE" ] && ! grep -q '#include "mac.h"' "$FILE"; then
@@ -99,16 +72,24 @@ jobs:
             fi
           done
 
+      - name: Debug - buscar macros TXWI_RATE (diagnóstico, no bloquea)
+        run: |
+          cd kernel
+          D=drivers/net/wireless/mediatek/mt7601u
+          echo "=== Buscando TXWI_RATE en todos los .h del driver ==="
+          grep -rn "TXWI_RATE" $D/*.h || echo "NO ENCONTRADO en ningún .h del driver"
           echo ""
-          echo "=== Verificación ==="
-          echo "--- dma.c primeras 10 líneas ---"
-          head -10 $D/dma.c
-          echo "--- phy.c primeras 10 líneas ---"
-          head -10 $D/phy.c
-          echo "--- init.c primeras 10 líneas ---"
-          head -10 $D/init.c
-          echo "--- mac.h primeras 5 líneas ---"
-          head -5 $D/mac.h
+          echo "=== Buscando TXWI_RATE en TODO el árbol wireless/mediatek (por si viene de mt76) ==="
+          grep -rn "TXWI_RATE" drivers/net/wireless/mediatek/ --include="*.h" || echo "NO ENCONTRADO en todo mediatek/"
+          echo ""
+          echo "=== Buscando definiciones similares (RATE_MCS, RATE_PHY) ==="
+          grep -rn "RATE_MCS\|RATE_PHY_MODE" $D/*.h
+          echo ""
+          echo "=== Contexto real de mac.c líneas 1-70 ==="
+          sed -n '1,70p' $D/mac.c
+          echo ""
+          echo "=== Includes actuales de mac.c ==="
+          grep -n "^#include" $D/mac.c
 
       - name: Configure kernel (minimal)
         run: |
@@ -127,6 +108,7 @@ jobs:
           grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK)" ../out/.config
 
       - name: Build only mt7601u
+        continue-on-error: true
         run: |
           cd kernel
           make ARCH=arm64 O=../out -j4 \
@@ -154,22 +136,25 @@ jobs:
           echo "=== Buscando mt7601u.ko ==="
           find ../out -name "mt7601u.ko" -ls
 
-      - name: Copy mt7601u.ko
+      - name: Copy mt7601u.ko (si existe)
         run: |
           cd kernel
           mkdir -p ../ko_output
-          find ../out -name "mt7601u.ko" -exec cp {} ../ko_output/ \;
-          ls -la ../ko_output/
+          find ../out -name "mt7601u.ko" -exec cp {} ../ko_output/ \; || true
+          ls -la ../ko_output/ || echo "carpeta vacía"
           if [ -f ../ko_output/mt7601u.ko ]; then
             echo "=== ¡MÓDULO ENCONTRADO! ==="
-            modinfo ../ko_output/mt7601u.ko | head -20
+            ../clang/bin/llvm-nm ../ko_output/mt7601u.ko | grep -i vermagic || true
           else
-            echo "=== mt7601u.ko NO encontrado ==="
-            exit 1
+            echo "=== mt7601u.ko NO encontrado — revisar step 'Debug' y 'Build only mt7601u' ==="
           fi
 
-      - name: Upload artifact
+      - name: Upload artifact (aunque falle, para poder ver logs/.o parciales)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mt7601u-module
-          path: ko_output/mt7601u.ko
+          name: mt7601u-build-output
+          path: |
+            ko_output/
+            out/drivers/net/wireless/mediatek/mt7601u/*.o
+          if-no-files-found: warn

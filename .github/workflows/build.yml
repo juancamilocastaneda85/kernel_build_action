@@ -32,49 +32,54 @@ jobs:
       - name: Diagnóstico previo
         run: |
           cd kernel
-          echo "===== init.c: línea de interface_modes ====="
+          echo "===== init.c: interface_modes ====="
           grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c
+          echo ""
+          echo "===== Makefile del mt7601u ====="
+          cat drivers/net/wireless/mediatek/mt7601u/Makefile
           echo ""
           echo "===== Versión del kernel ====="
           head -5 Makefile | grep -E "VERSION|PATCHLEVEL|SUBLEVEL"
-          echo ""
-          echo "===== Defconfigs disponibles para holi ====="
-          find arch/arm64/configs -iname "*holi*" 2>/dev/null
 
-      - name: Patch Kernel Source (AP Mode)
+      - name: Patch Kernel Source (AP Mode + trace fix)
         run: |
           cd kernel
 
+          # === Parche 1: modo AP ===
           F=drivers/net/wireless/mediatek/mt7601u/init.c
           
           if grep -q "wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);" "$F"; then
             sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
-            echo "=== Parche AP aplicado (STATION -> STATION | AP) ==="
-          elif grep -q "wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |" "$F"; then
-            echo "=== Parche AP ya estaba aplicado ==="
+            echo "=== Parche AP aplicado ==="
           else
-            echo "=== ADVERTENCIA: No se encontró la línea esperada. Aplicando fallback ==="
-            grep -n "interface_modes" "$F"
-            sed -i 's/BIT(NL80211_IFTYPE_STATION)/BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP)/' "$F"
+            echo "=== Parche AP ya estaba o no se encontró ==="
+          fi
+          
+          grep -n "interface_modes" "$F"
+          
+          # === Parche 2: fix del Makefile para trace.o ===
+          M=drivers/net/wireless/mediatek/mt7601u/Makefile
+          if [ -f "$M" ] && ! grep -q "CFLAGS_trace.o" "$M"; then
+            echo "" >> "$M"
+            echo "# PATCH: fix trace.h include path when building standalone" >> "$M"
+            echo "CFLAGS_trace.o := -I\$(src)" >> "$M"
+            echo "=== Fix trace.o aplicado ==="
           fi
           
           echo ""
-          echo "=== Verificación del parche ==="
-          grep -n "interface_modes" "$F"
+          echo "=== Makefile del mt7601u tras el parche ==="
+          cat "$M"
 
       - name: Prepare Kernel Config
         run: |
           cd kernel
           mkdir -p ../out
           
-          echo "===== Generando .config desde defconfig oficial ====="
-          
           if [ -f "arch/arm64/configs/vendor/holi-qgki_defconfig" ]; then
             echo "=== Usando vendor/holi-qgki_defconfig ==="
             make ARCH=arm64 O=../out vendor/holi-qgki_defconfig
           else
             echo "=== ERROR: no se encontró holi-qgki_defconfig ==="
-            ls arch/arm64/configs/vendor/ | grep -i holi
             exit 1
           fi
           
@@ -88,46 +93,36 @@ jobs:
             fi
           done
           
-          echo ""
-          echo "===== Verificando que el .config se creó ====="
           wc -l ../out/.config
 
-      - name: Configure Kernel (forzar valores críticos)
+      - name: Configure Kernel
         run: |
           cd kernel
           CONFIG=../out/.config
           
-          echo "=== ANTES de los ajustes ==="
-          grep -E "CONFIG_(LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD|MT7601U|WLAN_VENDOR_MEDIATEK)" $CONFIG || echo "(ninguno seteado)"
-          
-          # === FORZAR valores críticos ===
           ./scripts/config --file $CONFIG --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file $CONFIG --disable CONFIG_LOCALVERSION_AUTO
           ./scripts/config --file $CONFIG --enable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG --enable CONFIG_MODULE_FORCE_LOAD
           
-          # === Añadir el driver MT7601U ===
           ./scripts/config --file $CONFIG --module CONFIG_MT7601U
           ./scripts/config --file $CONFIG --enable CONFIG_WLAN_VENDOR_MEDIATEK
           
-          # === Asegurar dependencias WiFi ===
           ./scripts/config --file $CONFIG --enable CONFIG_CFG80211
           ./scripts/config --file $CONFIG --enable CONFIG_MAC80211
           ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL
           ./scripts/config --file $CONFIG --enable CONFIG_MAC80211_RC_MINSTREL_HT
           
-          # === Resolver dependencias ===
           yes "" | make ARCH=arm64 O=../out olddefconfig
           
-          echo ""
-          echo "=== DESPUÉS de los ajustes ==="
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD|CFG80211|MAC80211)" $CONFIG
+          echo "=== Configuración final ==="
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|LOCALVERSION|MODVERSIONS|MODULE_FORCE_LOAD)" $CONFIG
 
-      - name: Build MT7601U module (Opción C - rápido)
+      - name: Build MT7601U module
         run: |
           cd kernel
           
-          echo "=== Paso 1: modules_prepare (genera herramientas de build) ==="
+          echo "=== modules_prepare ==="
           make ARCH=arm64 O=../out -j4 \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
@@ -139,11 +134,7 @@ jobs:
             modules_prepare
           
           echo ""
-          echo "=== Paso 2: Verificar que modpost se generó ==="
-          ls -lh ../out/scripts/mod/modpost || echo "=== modpost NO generado ==="
-          
-          echo ""
-          echo "=== Paso 3: Compilar mt7601u.ko ==="
+          echo "=== Compilando mt7601u.ko ==="
           KBUILD_MODPOST_WARN=1 make ARCH=arm64 O=../out -j4 \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
@@ -170,11 +161,11 @@ jobs:
             echo "=== Información del módulo ==="
             modinfo "$KO" | head -15 || true
             echo ""
-            echo "=== Verificar modo AP en el .ko ==="
+            echo "=== Modo AP en el .ko ==="
             if strings "$KO" | grep -q "NL80211_IFTYPE_AP"; then
               echo "=== MODO AP PRESENTE ==="
             else
-              echo "=== ALERTA: Modo AP NO detectado en el binario ==="
+              echo "=== ALERTA: Modo AP NO detectado ==="
             fi
           else
             echo "=== ERROR: mt7601u.ko NO se generó ==="

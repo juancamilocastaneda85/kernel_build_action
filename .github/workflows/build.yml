@@ -28,53 +28,16 @@ jobs:
           tar -xzf clang.tar.gz -C clang
           rm clang.tar.gz
 
-      - name: Diagnóstico
-        run: |
-          cd kernel
-          echo "===== init.c: interface_modes ====="
-          grep -n "interface_modes" drivers/net/wireless/mediatek/mt7601u/init.c || true
-          echo ""
-          echo "===== ¿MT_PHY_TYPE_* existen en headers? ====="
-          grep -rn "MT_PHY_TYPE_CCK\|MT_PHY_TYPE_OFDM" drivers/net/wireless/mediatek/mt7601u/*.h || echo "(no encontrados)"
-          echo ""
-          echo "===== mcu.c: definición de trace_mt_mcu_msg_send_cs ====="
-          grep -n "trace_mt_mcu_msg_send_cs" drivers/net/wireless/mediatek/mt7601u/mcu.c || true
-
       - name: Patch source
         run: |
           cd kernel
-          F=drivers/net/wireless/mediatek/mt7601u/init.c
-          sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' "$F"
-
+          sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' drivers/net/wireless/mediatek/mt7601u/init.c
           printf '/* PATCH: trace.h vacio */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > drivers/net/wireless/mediatek/mt7601u/trace.h
           echo '/* PATCH: trace.c vacio */' > drivers/net/wireless/mediatek/mt7601u/trace.c
-
-          M=drivers/net/wireless/mediatek/mt7601u/Makefile
-          sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' "$M"
-
-          # Añadir MT_PHY_TYPE_* después del último #include en init.c
-          LINE=$(grep -n "^#include" "$F" | tail -1 | cut -d: -f1)
-          sed -i "${LINE}a\\
-\\
-/* PATCH: MT_PHY_TYPE_* */\\
-#ifndef MT_PHY_TYPE_CCK\\
-#define MT_PHY_TYPE_CCK 0\\
-#endif\\
-#ifndef MT_PHY_TYPE_OFDM\\
-#define MT_PHY_TYPE_OFDM 1\\
-#endif\\
-#ifndef MT_PHY_TYPE_HT\\
-#define MT_PHY_TYPE_HT 2\\
-#endif\\
-#ifndef MT_PHY_TYPE_HT_GF\\
-#define MT_PHY_TYPE_HT_GF 3\\
-#endif" "$F"
-
-          echo "=== init.c: primeras 25 líneas ==="
-          head -25 "$F"
-          echo ""
-          echo "=== Makefile final ==="
-          cat "$M"
+          sed -i 's/^mt7601u-y.*debugfs\.o.*$/# PATCH: debugfs.o excluded/' drivers/net/wireless/mediatek/mt7601u/Makefile
+          printf '/* PATCH: MT_PHY_TYPE_* */\n#ifndef MT_PHY_TYPE_CCK\n#define MT_PHY_TYPE_CCK 0\n#endif\n#ifndef MT_PHY_TYPE_OFDM\n#define MT_PHY_TYPE_OFDM 1\n#endif\n#ifndef MT_PHY_TYPE_HT\n#define MT_PHY_TYPE_HT 2\n#endif\n#ifndef MT_PHY_TYPE_HT_GF\n#define MT_PHY_TYPE_HT_GF 3\n#endif\n' > /tmp/phy_types.h
+          cat /tmp/phy_types.h drivers/net/wireless/mediatek/mt7601u/init.c > /tmp/init_new.c
+          mv /tmp/init_new.c drivers/net/wireless/mediatek/mt7601u/init.c
 
       - name: Neutralize trace macros
         run: |
@@ -83,7 +46,7 @@ jobs:
             FILE=drivers/net/wireless/mediatek/mt7601u/$f
             if [ -f "$FILE" ]; then
               printf '%s\n' \
-                '/* PATCH-TRACE: neutralizar macros trace_* */' \
+                '/* PATCH-TRACE */' \
                 '#define trace_mt_mcu_msg_send(...) do {} while (0)' \
                 '#define trace_mt_submit_urb_sync(...) do {} while (0)' \
                 '#define trace_mt_submit_urb(...) do {} while (0)' \
@@ -110,7 +73,6 @@ jobs:
               mv /tmp/new_file.c "$FILE"
             fi
           done
-          echo "=== trace_* neutralizados ==="
 
       - name: Config
         run: |
@@ -144,8 +106,6 @@ jobs:
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
             modules_prepare
-          echo ""
-          echo "=== Compilando mt7601u.ko ==="
           KBUILD_MODPOST_WARN=1 make ARCH=arm64 O=../out -j4 \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
@@ -160,18 +120,8 @@ jobs:
       - name: Verify module
         run: |
           cd kernel
-          KO=../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
-          if [ -f "$KO" ]; then
-            echo "=== ¡MÓDULO COMPILADO! ==="
-            ls -lh "$KO"
-            modinfo "$KO" | grep vermagic || true
-            if strings "$KO" | grep -q "NL80211_IFTYPE_AP"; then
-              echo "=== MODO AP PRESENTE ==="
-            fi
-          else
-            echo "=== ERROR: mt7601u.ko NO se generó ==="
-            exit 1
-          fi
+          ls -lh ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+          modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep vermagic
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

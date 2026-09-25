@@ -1,4 +1,4 @@
-name: Build MT7601U AP Driver (Full Kernel Build)
+name: Build MT7601U AP Driver
 on:
   workflow_dispatch:
 
@@ -33,29 +33,11 @@ jobs:
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
           grep -n "interface_modes" $D/init.c
 
-      - name: Patch qcom_scm
-        run: |
-          cd kernel
-          F=drivers/firmware/qcom_scm.c
-          sed -i 's|^early_initcall(scm_mem_protection_init);|/* PATCH: disabled for module build */|' $F
-          sed -i 's|^static int __init scm_mem_protection_init(void)|static int __init __maybe_unused scm_mem_protection_init(void)|' $F
-          grep -n "initcall\|scm_mem_protection_init" $F
-
-      - name: Patch smb1398-charger
-        run: |
-          cd kernel
-          F=drivers/power/supply/qcom/smb1398-charger.c
-          sed -i 's/(int)of_device_get_match_data(chip->dev)/(int)(uintptr_t)of_device_get_match_data(chip->dev)/' $F
-          grep -n "of_device_get_match_data" $F
-
-      - name: Configure kernel
+      - name: Configure kernel (minimal)
         run: |
           cd kernel
           mkdir -p ../out
           make ARCH=arm64 O=../out vendor/holi-qgki_defconfig
-          cat arch/arm64/configs/vendor/holi_GKI.config >> ../out/.config
-          cat arch/arm64/configs/vendor/holi_consolidate.config >> ../out/.config
-          cat arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config >> ../out/.config
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
@@ -67,12 +49,25 @@ jobs:
           yes "" | make ARCH=arm64 O=../out olddefconfig
           grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK)" ../out/.config
 
-      - name: Build kernel modules (full)
-        continue-on-error: true
+      - name: Build only mt7601u
         run: |
           cd kernel
+          
+          echo "=== Paso 1: modules_prepare ==="
           make ARCH=arm64 O=../out -j4 \
-            KCFLAGS="-Wno-error -Wno-void-pointer-to-int-cast -Wno-int-to-void-pointer-cast -Wno-unused-function -Wno-implicit-function-declaration -Wno-unused-variable" \
+            KCFLAGS="-Wno-error" \
+            CC=../clang/bin/clang \
+            LD=../clang/bin/ld.lld \
+            AR=../clang/bin/llvm-ar \
+            NM=../clang/bin/llvm-nm \
+            OBJCOPY=../clang/bin/llvm-objcopy \
+            OBJDUMP=../clang/bin/llvm-objdump \
+            STRIP=../clang/bin/llvm-strip \
+            modules_prepare
+          
+          echo "=== Paso 2: compilar mt7601u ==="
+          make ARCH=arm64 O=../out -j4 \
+            KCFLAGS="-Wno-error" \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
             AR=../clang/bin/llvm-ar \
@@ -81,23 +76,18 @@ jobs:
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
             KBUILD_MODPOST_WARN=1 \
+            M=drivers/net/wireless/mediatek/mt7601u \
             modules
-          echo "Build terminado (con o sin errores)"
-
-      - name: Find and copy mt7601u.ko
-        run: |
-          cd kernel
+          
           echo "=== Buscando mt7601u.ko ==="
           find ../out -name "mt7601u.ko" -ls
-          
-          # Copiar a un lugar conocido
+
+      - name: Copy mt7601u.ko
+        run: |
+          cd kernel
           mkdir -p ../ko_output
           find ../out -name "mt7601u.ko" -exec cp {} ../ko_output/ \;
-          
-          echo ""
-          echo "=== Contenido de ko_output ==="
           ls -la ../ko_output/
-          
           if [ -f ../ko_output/mt7601u.ko ]; then
             echo "=== ¡MÓDULO ENCONTRADO! ==="
             modinfo ../ko_output/mt7601u.ko | head -20

@@ -30,10 +30,18 @@ jobs:
         run: |
           cd kernel
           D=drivers/net/wireless/mediatek/mt7601u
-
-          # Parche AP
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
           grep -n "interface_modes" $D/init.c
+
+      - name: Patch qcom_scm
+        run: |
+          cd kernel
+          F=drivers/firmware/qcom_scm.c
+          echo "=== ANTES ==="
+          grep -n "initcall" $F || echo "(no encontrado)"
+          sed -i 's|^early_initcall(scm_mem_protection_init);|/* PATCH: early_initcall disabled for module build */|' $F
+          echo "=== DESPUÉS ==="
+          grep -n "initcall" $F
 
       - name: Configure kernel
         run: |
@@ -75,13 +83,7 @@ jobs:
             echo "=== MODULO COMPILADO ==="
             ls -lh "$KO"
             modinfo "$KO" | grep vermagic
-            if strings "$KO" | grep -q "NL80211_IFTYPE_AP"; then
-              echo "=== MODO AP PRESENTE ==="
-            fi
-            echo "=== __tracepoint ==="
-            strings "$KO" | grep -c "__tracepoint" || echo "0"
-            echo "=== debugfs_create ==="
-            strings "$KO" | grep -c "debugfs_create" || echo "0"
+            strings "$KO" | grep -q "NL80211_IFTYPE_AP" && echo "=== MODO AP PRESENTE ==="
           else
             echo "=== mt7601u.ko NO generado ==="
             find ../out -name "mt7601u.ko" 2>/dev/null

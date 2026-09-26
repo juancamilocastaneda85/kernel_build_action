@@ -36,7 +36,8 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
-          make ARCH=arm64 O=../out CC=../clang/bin/clang LD=../clang/bin/ld.lld vendor/fogos_defconfig
+          make ARCH=arm64 O=../out CC=../clang/bin/clang LD=../clang/bin/ld.lld vendor/holi-qgki_defconfig
+          ./scripts/kconfig/merge_config.sh -O ../out ../out/.config arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG
@@ -46,6 +47,7 @@ jobs:
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           make ARCH=arm64 O=../out CC=../clang/bin/clang LD=../clang/bin/ld.lld olddefconfig < /dev/null
+          grep -E "CONFIG_FOGOS_DTB|CONFIG_MT7601U|CONFIG_WLAN_VENDOR_MEDIATEK" ../out/.config
       - name: Build kernel
         run: |
           cd kernel

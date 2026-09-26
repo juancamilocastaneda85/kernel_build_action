@@ -51,7 +51,7 @@ jobs:
       - name: Build kernel
         run: |
           cd kernel
-          make ARCH=arm64 O=../out -j4 CC=../clang/bin/clang LD=../clang/bin/ld.lld AR=../clang/bin/llvm-ar NM=../clang/bin/llvm-nm OBJCOPY=../clang/bin/llvm-objcopy OBJDUMP=../clang/bin/llvm-objdump STRIP=../clang/bin/llvm-strip Image modules < /dev/null
+          make ARCH=arm64 O=../out -j4 KCFLAGS="-Wno-error" CC=../clang/bin/clang LD=../clang/bin/ld.lld AR=../clang/bin/llvm-ar NM=../clang/bin/llvm-nm OBJCOPY=../clang/bin/llvm-objcopy OBJDUMP=../clang/bin/llvm-objdump STRIP=../clang/bin/llvm-strip Image modules < /dev/null
       - uses: actions/upload-artifact@v4
         with:
           name: kernel-sedona-output

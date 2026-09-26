@@ -31,6 +31,7 @@ jobs:
           cd kernel
           D=drivers/net/wireless/mediatek/mt7601u
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
+          grep -n "interface_modes" $D/init.c
 
       - name: Patch mt7601u traces
         run: |
@@ -46,6 +47,8 @@ jobs:
           grep -ohE 'trace_[a-zA-Z0-9_]+\(' $D/*.c | sed 's/($//' | sort -u | \
             grep -v 'trace_mt_mcu_msg_send_cs' | \
             awk '{print "#define " $0 "(...) do {} while (0)"}' > /tmp/patch_header.txt
+          echo "=== Stubs generados ==="
+          cat /tmp/patch_header.txt
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
             FILE=$D/$f
             if [ -f "$FILE" ]; then
@@ -138,13 +141,12 @@ jobs:
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "" | make ARCH=arm64 O=../out olddefconfig
           echo "=== Config final ==="
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|QCOM_SMEM|QTI_HW_KEY|QTI_CRYPTO)" ../out/.config
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|QCOM_SMEM|SCSI_UFS|IPA3|MSM_PIL)" ../out/.config
 
       - name: Build full kernel modules
         run: |
           cd kernel
           make ARCH=arm64 O=../out -j4 \
-            KCFLAGS="-Wno-error" \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
             AR=../clang/bin/llvm-ar \
@@ -160,6 +162,8 @@ jobs:
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i vermagic
           echo "=== ALIASES ==="
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i "alias=usb" | head -3
+          echo "=== INITSIZE (debe ser > 0) ==="
+          readelf -S ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko 2>/dev/null | grep -A 1 ".init.text"
 
       - name: Copy mt7601u.ko
         run: |

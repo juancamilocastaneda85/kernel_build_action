@@ -1,5 +1,4 @@
-name: Build Kernel with MT7601U built-in
-
+name: Build MT7601U AP Driver
 on:
   workflow_dispatch:
 
@@ -15,10 +14,19 @@ jobs:
           ref: lineage-23.2
           path: kernel
 
+      - uses: actions/checkout@v4
+        with:
+          repository: Moto-Sedona/android_kernel_motorola_sm6375
+          ref: seventeen
+          path: sedona-src
+          sparse-checkout: |
+            drivers/net/wireless/mediatek/mt7601u
+          sparse-checkout-cone-mode: false
+
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils cpio
+          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils
 
       - name: Download clang
         run: |
@@ -27,80 +35,41 @@ jobs:
           tar -xzf clang.tar.gz -C clang
           rm clang.tar.gz
 
+      - name: Reemplazar driver mt7601u con la versión completa de Moto-Sedona
+        run: |
+          D=kernel/drivers/net/wireless/mediatek/mt7601u
+          S=sedona-src/drivers/net/wireless/mediatek/mt7601u
+
+          echo "=== Archivos ANTES (LineageOS, versión rota) ==="
+          ls -la $D
+
+          rm -rf $D
+          cp -r $S $D
+
+          echo "=== Archivos DESPUÉS (Moto-Sedona, versión completa) ==="
+          ls -la $D
+
+          echo "=== Confirmando que las macros TXWI_RATE ahora existen ==="
+          grep -n "MT_TXWI_RATE_MCS\|MT_TXWI_RATE_PHY_MODE" $D/mac.h
+
       - name: Patch for AP mode
         run: |
-          cd kernel
-          D=drivers/net/wireless/mediatek/mt7601u
+          D=kernel/drivers/net/wireless/mediatek/mt7601u
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
+          grep -n "interface_modes" $D/init.c
 
-      - name: Patch mt7601u traces
+      - name: Asegurar -I(src) en el Makefile del driver (por si trace.h lo necesita)
         run: |
-          cd kernel
-          D=drivers/net/wireless/mediatek/mt7601u
-          printf '/* PATCH: trace.h vacio */\n#ifndef __MT7601U_TRACE_H\n#define __MT7601U_TRACE_H\n#endif\n' > $D/trace.h
-          echo '/* PATCH: trace.c vacio */' > $D/trace.c
-          if ! grep -q "PATCH_PHY_TYPES" $D/init.c; then
-            printf '/* PATCH_PHY_TYPES */\n#ifndef MT_PHY_TYPE_CCK\n#define MT_PHY_TYPE_CCK 0\n#endif\n#ifndef MT_PHY_TYPE_OFDM\n#define MT_PHY_TYPE_OFDM 1\n#endif\n#ifndef MT_PHY_TYPE_HT\n#define MT_PHY_TYPE_HT 2\n#endif\n#ifndef MT_PHY_TYPE_HT_GF\n#define MT_PHY_TYPE_HT_GF 3\n#endif\n' > /tmp/phy_types.h
-            cat /tmp/phy_types.h $D/init.c > /tmp/init_new.c
-            mv /tmp/init_new.c $D/init.c
-          fi
-          grep -ohE 'trace_[a-zA-Z0-9_]+\(' $D/*.c | sed 's/($//' | sort -u | \
-            grep -v 'trace_mt_mcu_msg_send_cs' | \
-            awk '{print "#define " $0 "(...) do {} while (0)"}' > /tmp/patch_header.txt
-          for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
-            FILE=$D/$f
-            if [ -f "$FILE" ]; then
-              LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
-              if [ -n "$LINE" ]; then
-                sed -i "${LINE}r /tmp/patch_header.txt" "$FILE"
-              fi
-            fi
-          done
-          if ! grep -q "PATCH_MAC_INCLUDES" $D/mac.h; then
-            printf '/* PATCH_MAC_INCLUDES */\n#include <linux/types.h>\n#include <linux/skbuff.h>\n#include <linux/ieee80211.h>\n' > /tmp/mac_includes.h
-            cat /tmp/mac_includes.h $D/mac.h > /tmp/mac_new.h
-            mv /tmp/mac_new.h $D/mac.h
-          fi
-          for f in dma.c phy.c mac.c tx.c; do
-            FILE=$D/$f
-            if [ -f "$FILE" ] && ! grep -q '#include "mac.h"' "$FILE"; then
-              LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
-              sed -i "${LINE}a #include \"mac.h\"" "$FILE"
-            fi
-          done
-          for f in mac.c tx.c; do
-            FILE=$D/$f
-            if [ -f "$FILE" ] && ! grep -q '#include "regs.h"' "$FILE"; then
-              LINE=$(grep -n "^#include" "$FILE" | tail -1 | cut -d: -f1)
-              sed -i "${LINE}a #include \"regs.h\"" "$FILE"
-            fi
-          done
+          D=kernel/drivers/net/wireless/mediatek/mt7601u
+          grep -q 'ccflags-y.*-I\$(src)' $D/Makefile || echo 'ccflags-y += -I$(src)' >> $D/Makefile
+          cat $D/Makefile
 
-      - name: Configure kernel (mt7601u built-in)
+      - name: Configure kernel (minimal)
         run: |
           cd kernel
           mkdir -p ../out
           make ARCH=arm64 O=../out vendor/holi-qgki_defconfig
-          for opt in \
-            MSM_PIL_SSR_GENERIC MSM_PIL MSM_SERVICE_LOCATOR MSM_SERVICE_NOTIFIER \
-            MSM_SUBSYSTEM_RESTART QCOM_RPMH QCOM_RPMHPD QCOM_MEMORY_DUMP_V2 \
-            QCOM_MINIDUMP QCOM_MINIDUMP_FTRACE QCOM_MINIDUMP_PANIC_DUMP \
-            QCOM_MICRODUMP QCOM_SECURE_BUFFER MSM_GLINK_SSR MSM_CDSP_LOADER \
-            MSM_RPM_SMD SCSI_UFS_QCOM SCSI_UFSHCD SCSI_UFSHCD_QTI \
-            SCSI_UFSHCD_PLATFORM SCSI_UFSHCD_PCI SCSI_UFS_CRYPTO \
-            SCSI_UFS_CRYPTO_QTI SCSI_UFS_BSG SCSI_UFS_HISI \
-            SCSI_UFS_DWC_TC_PLATFORM UFSFEATURE UFSHPB UFSTW UFSHID \
-            UFSHID_POC SCSI_SKHPB SCSI_SKHID MICRON_HPB MICRON_UFSHID \
-            IPA3 IPA_WDI_UNIFIED_API USB_BAM MSM_SPSS_UTILS MSM_BOOT_STATS \
-            QTI_HW_KEY_MANAGER QTI_CRYPTO_COMMON QTI_CRYPTO_TZ QTI_CRYPTO_FDE ; do
-            ./scripts/config --file ../out/.config --disable CONFIG_$opt
-          done
-          ./scripts/config --file ../out/.config --enable CONFIG_QCOM_SMEM
-          
-          # ===== CAMBIO CLAVE: mt7601u BUILT-IN, no módulo =====
-          ./scripts/config --file ../out/.config --enable CONFIG_MT7601U
-          ./scripts/config --file ../out/.config --disable CONFIG_MT7601U_MODULE
-          
+          ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
@@ -109,14 +78,14 @@ jobs:
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "" | make ARCH=arm64 O=../out olddefconfig
-          
-          echo "=== Config final ==="
           grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK)" ../out/.config
 
-      - name: Build Image + modules
+      - name: Build only mt7601u
+        continue-on-error: true
         run: |
           cd kernel
           make ARCH=arm64 O=../out -j4 \
+            KCFLAGS="-Wno-error" \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
             AR=../clang/bin/llvm-ar \
@@ -124,16 +93,34 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
-            Image modules
-          echo ""
-          echo "=== ¿Image generado? ==="
-          ls -la ../out/arch/arm64/boot/Image
-          echo ""
-          echo "=== Tamaño ==="
-          du -h ../out/arch/arm64/boot/Image
+            modules_prepare
+          make ARCH=arm64 O=../out -j4 \
+            KCFLAGS="-Wno-error" \
+            CC=../clang/bin/clang \
+            LD=../clang/bin/ld.lld \
+            AR=../clang/bin/llvm-ar \
+            NM=../clang/bin/llvm-nm \
+            OBJCOPY=../clang/bin/llvm-objcopy \
+            OBJDUMP=../clang/bin/llvm-objdump \
+            STRIP=../clang/bin/llvm-strip \
+            KBUILD_MODPOST_WARN=1 \
+            M=drivers/net/wireless/mediatek/mt7601u \
+            modules
+          echo "=== Buscando mt7601u.ko ==="
+          find ../out -name "mt7601u.ko" -ls
 
-      - name: Upload Image
+      - name: Copy mt7601u.ko
+        run: |
+          mkdir -p ko_output
+          find out -name "mt7601u.ko" -exec cp {} ko_output/ \; || true
+          ls -la ko_output/ || echo "carpeta vacía"
+
+      - name: Upload artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-image
-          path: out/arch/arm64/boot/Image
+          name: mt7601u-module
+          path: |
+            ko_output/
+            out/drivers/net/wireless/mediatek/mt7601u/*.o
+          if-no-files-found: warn

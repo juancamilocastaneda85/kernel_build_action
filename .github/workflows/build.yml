@@ -1,4 +1,5 @@
-name: Build MT7601U AP Driver
+name: Build Kernel with MT7601U
+
 on:
   workflow_dispatch:
 
@@ -6,108 +7,56 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/checkout@v4
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
         with:
           repository: LineageOS/android_kernel_motorola_sm6375
           ref: lineage-23.2
           path: kernel
 
-      - uses: actions/checkout@v4
-        with:
-          repository: Moto-Sedona/android_kernel_motorola_sm6375
-          ref: seventeen
-          path: sedona-src
-          sparse-checkout: |
-            drivers/net/wireless/mediatek/mt7601u
-          sparse-checkout-cone-mode: false
-
-      - name: Install deps
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils file
+          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils
 
-      - name: Cache clang toolchain
-        id: cache-clang
-        uses: actions/cache@v4
-        with:
-          path: clang
-          key: clang-r416183b-linux-x86
-
-      - name: Download clang
-        if: steps.cache-clang.outputs.cache-hit != 'true'
+      - name: Download clang-r416183b
         run: |
           mkdir -p clang
-          for i in 1 2 3 4 5; do
-            echo "=== Intento $i de descarga ==="
-            wget --tries=3 --timeout=60 -q \
-              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/8fd13dca1a6dfbc43fc54b2408d49199981c387b/clang-r416183b.tar.gz \
-              -O clang.tar.gz && break
-            echo "Falló intento $i, esperando 15s..."
-            sleep 15
-          done
-          ls -la clang.tar.gz
-          file clang.tar.gz
-          tar -xzf clang.tar.gz -C clang
+          wget -q "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/8fd13dca1a6dfbc43fc54b2408d49199981c387b/clang-r416183b.tar.gz" -O clang.tar.gz
+          tar -xf clang.tar.gz -C clang
           rm clang.tar.gz
 
-      - name: Reemplazar driver mt7601u con la versión completa de Moto-Sedona
-        run: |
-          D=kernel/drivers/net/wireless/mediatek/mt7601u
-          S=sedona-src/drivers/net/wireless/mediatek/mt7601u
-
-          echo "=== Archivos ANTES (LineageOS, versión rota) ==="
-          ls -la $D
-
-          rm -rf $D
-          cp -r $S $D
-
-          echo "=== Archivos DESPUÉS (Moto-Sedona, versión completa) ==="
-          ls -la $D
-
-          echo "=== Confirmando que las macros TXWI_RATE ahora existen ==="
-          grep -n "MT_TXWI_RATE_MCS\|MT_TXWI_RATE_PHY_MODE" $D/mac.h
-
-      - name: Patch for AP mode
-        run: |
-          D=kernel/drivers/net/wireless/mediatek/mt7601u
-          sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
-          grep -n "interface_modes" $D/init.c
-
-      - name: Asegurar -I(srctree)/(src) en el Makefile del driver (fix trace.h con builds O=)
-        run: |
-          D=kernel/drivers/net/wireless/mediatek/mt7601u
-          echo "=== Makefile ANTES ==="
-          cat $D/Makefile
-          # La línea original usa solo $(src), insuficiente con O=../out separado
-          sed -i 's#CFLAGS_trace.o := -I\$(src)#CFLAGS_trace.o := -I$(srctree)/$(src)#' $D/Makefile
-          echo 'ccflags-y += -I$(srctree)/$(src)' >> $D/Makefile
-          echo "=== Makefile DESPUÉS ==="
-          cat $D/Makefile
-
-      - name: Configure kernel (minimal)
+      - name: Fix trace.o include path
         run: |
           cd kernel
-          mkdir -p ../out
-          make ARCH=arm64 O=../out vendor/holi-qgki_defconfig
+          D=drivers/net/wireless/mediatek/mt7601u
+          sed -i 's|CFLAGS_trace.o := -I$(src)|CFLAGS_trace.o := -I$(srctree)/$(src)|' $D/Makefile
+          grep CFLAGS_trace $D/Makefile
+
+      - name: Configure kernel
+        run: |
+          cd kernel
+          make ARCH=arm64 O=../out CC=../clang/bin/clang LD=../clang/bin/ld.lld vendor/holi-qgki_defconfig
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
-          ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
-          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
-          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL
-          ./scripts/config --file ../out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
+          ./scripts/config --file ../out/.config --disable CONFIG_LTO_CLANG
+          ./scripts/config --file ../out/.config --enable CONFIG_LTO_NONE
+          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_REL_CRCS
+          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG
+          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG_ALL
+          ./scripts/config --file ../out/.config --disable CONFIG_MODULE_SIG_FORCE
+          ./scripts/config --file ../out/.config --disable CONFIG_STRICT_MODULE_RWX
+          ./scripts/config --file ../out/.config --enable CONFIG_MODVERSIONS
+          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG
+          ./scripts/config --file ../out/.config --enable CONFIG_CFI_CLANG_SHADOW
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
-          yes "" | make ARCH=arm64 O=../out olddefconfig
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK)" ../out/.config
+          make ARCH=arm64 O=../out CC=../clang/bin/clang LD=../clang/bin/ld.lld olddefconfig < /dev/null
 
-      - name: Build only mt7601u
-        continue-on-error: true
+      - name: Build kernel
         run: |
           cd kernel
           make ARCH=arm64 O=../out -j4 \
-            KCFLAGS="-Wno-error" \
             CC=../clang/bin/clang \
             LD=../clang/bin/ld.lld \
             AR=../clang/bin/llvm-ar \
@@ -115,39 +64,12 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
-            modules_prepare
-          make ARCH=arm64 O=../out -j4 \
-            KCFLAGS="-Wno-error" \
-            CC=../clang/bin/clang \
-            LD=../clang/bin/ld.lld \
-            AR=../clang/bin/llvm-ar \
-            NM=../clang/bin/llvm-nm \
-            OBJCOPY=../clang/bin/llvm-objcopy \
-            OBJDUMP=../clang/bin/llvm-objdump \
-            STRIP=../clang/bin/llvm-strip \
-            KBUILD_MODPOST_WARN=1 \
-            M=drivers/net/wireless/mediatek/mt7601u \
-            modules
-          echo "=== Buscando mt7601u.ko ==="
-          find ../out -name "mt7601u.ko" -ls
+            Image modules < /dev/null
 
-      - name: Copy mt7601u.ko
-        run: |
-          mkdir -p ko_output
-          find out -name "mt7601u.ko" -exec cp {} ko_output/ \; || true
-          ls -la ko_output/ || echo "carpeta vacía"
-          if [ -f ko_output/mt7601u.ko ]; then
-            echo "=== Verificación del módulo ==="
-            ../clang/bin/llvm-nm ko_output/mt7601u.ko 2>/dev/null | grep -i vermagic || true
-            modinfo ko_output/mt7601u.ko 2>/dev/null || echo "modinfo no disponible en runner, verificar en el teléfono"
-          fi
-
-      - name: Upload artifact
-        if: always()
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mt7601u-module
+          name: kernel-output
           path: |
-            ko_output/
-            out/drivers/net/wireless/mediatek/mt7601u/*.o
-          if-no-files-found: warn
+            out/arch/arm64/boot/Image
+            out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko

@@ -1,4 +1,5 @@
-name: Build MT7601U AP Driver
+name: Build Kernel with MT7601U built-in
+
 on:
   workflow_dispatch:
 
@@ -17,7 +18,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils
+          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils cpio
 
       - name: Download clang
         run: |
@@ -75,7 +76,7 @@ jobs:
             fi
           done
 
-      - name: Configure kernel (minimal, sin MMI que no necesitamos)
+      - name: Configure kernel (mt7601u built-in)
         run: |
           cd kernel
           mkdir -p ../out
@@ -95,7 +96,11 @@ jobs:
             ./scripts/config --file ../out/.config --disable CONFIG_$opt
           done
           ./scripts/config --file ../out/.config --enable CONFIG_QCOM_SMEM
-          ./scripts/config --file ../out/.config --module CONFIG_MT7601U
+          
+          # ===== CAMBIO CLAVE: mt7601u BUILT-IN, no módulo =====
+          ./scripts/config --file ../out/.config --enable CONFIG_MT7601U
+          ./scripts/config --file ../out/.config --disable CONFIG_MT7601U_MODULE
+          
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           ./scripts/config --file ../out/.config --enable CONFIG_CFG80211
           ./scripts/config --file ../out/.config --enable CONFIG_MAC80211
@@ -104,8 +109,11 @@ jobs:
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "" | make ARCH=arm64 O=../out olddefconfig
+          
+          echo "=== Config final ==="
+          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK)" ../out/.config
 
-      - name: Build full kernel modules
+      - name: Build Image + modules
         run: |
           cd kernel
           make ARCH=arm64 O=../out -j4 \
@@ -116,58 +124,16 @@ jobs:
             OBJCOPY=../clang/bin/llvm-objcopy \
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
-            modules
-
-      - name: Verify Module.symvers
-        run: |
-          cd kernel
-          echo "=== ¿Module.symvers existe? ==="
-          ls -la ../out/Module.symvers 2>/dev/null || echo "(NO EXISTE)"
+            Image modules
           echo ""
-          echo "=== Tamaño en líneas ==="
-          wc -l ../out/Module.symvers 2>/dev/null || echo "(vacío)"
+          echo "=== ¿Image generado? ==="
+          ls -la ../out/arch/arm64/boot/Image
           echo ""
-          echo "=== ¿Tiene usbcore? ==="
-          grep -c "usbcore" ../out/Module.symvers 2>/dev/null || echo "0"
-          echo "=== ¿Tiene cfg80211? ==="
-          grep -c "cfg80211" ../out/Module.symvers 2>/dev/null || echo "0"
-          echo "=== ¿Tiene mac80211? ==="
-          grep -c "mac80211" ../out/Module.symvers 2>/dev/null || echo "0"
+          echo "=== Tamaño ==="
+          du -h ../out/arch/arm64/boot/Image
 
-      - name: Recompilar mt7601u con Module.symvers
-        run: |
-          cd kernel
-          rm -f ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
-          rm -f ../out/drivers/net/wireless/mediatek/mt7601u/*.o
-          
-          make ARCH=arm64 O=../out -j4 \
-            CC=../clang/bin/clang \
-            LD=../clang/bin/ld.lld \
-            AR=../clang/bin/llvm-ar \
-            NM=../clang/bin/llvm-nm \
-            OBJCOPY=../clang/bin/llvm-objcopy \
-            OBJDUMP=../clang/bin/llvm-objdump \
-            STRIP=../clang/bin/llvm-strip \
-            M=drivers/net/wireless/mediatek/mt7601u \
-            modules
-          
-          echo ""
-          echo "=== DEPENDS ==="
-          modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i depends
-          echo "=== ALIASES ==="
-          modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i "alias=usb" | head -3
-          echo "=== INITSIZE ==="
-          readelf -S ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko 2>/dev/null | grep -A 1 ".init.text"
-
-      - name: Copy mt7601u.ko
-        run: |
-          cd kernel
-          mkdir -p ../ko_output
-          find ../out -name "mt7601u.ko" -exec cp {} ../ko_output/ \; || true
-          ls -la ../ko_output/
-
-      - name: Upload artifact
+      - name: Upload Image
         uses: actions/upload-artifact@v4
         with:
-          name: mt7601u-module
-          path: ko_output/mt7601u.ko
+          name: kernel-image
+          path: out/arch/arm64/boot/Image

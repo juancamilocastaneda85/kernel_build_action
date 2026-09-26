@@ -26,12 +26,29 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils
+          sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget xz-utils file
+
+      - name: Cache clang toolchain
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: clang
+          key: clang-r416183b-linux-x86
 
       - name: Download clang
+        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p clang
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang-r416183b.tar.gz -O clang.tar.gz
+          for i in 1 2 3 4 5; do
+            echo "=== Intento $i de descarga ==="
+            wget --tries=3 --timeout=60 -q \
+              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/8fd13dca1a6dfbc43fc54b2408d49199981c387b/clang-r416183b.tar.gz \
+              -O clang.tar.gz && break
+            echo "Falló intento $i, esperando 15s..."
+            sleep 15
+          done
+          ls -la clang.tar.gz
+          file clang.tar.gz
           tar -xzf clang.tar.gz -C clang
           rm clang.tar.gz
 
@@ -58,10 +75,15 @@ jobs:
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
           grep -n "interface_modes" $D/init.c
 
-      - name: Asegurar -I(src) en el Makefile del driver (por si trace.h lo necesita)
+      - name: Asegurar -I(srctree)/(src) en el Makefile del driver (fix trace.h con builds O=)
         run: |
           D=kernel/drivers/net/wireless/mediatek/mt7601u
-          grep -q 'ccflags-y.*-I\$(src)' $D/Makefile || echo 'ccflags-y += -I$(src)' >> $D/Makefile
+          echo "=== Makefile ANTES ==="
+          cat $D/Makefile
+          # La línea original usa solo $(src), insuficiente con O=../out separado
+          sed -i 's#CFLAGS_trace.o := -I\$(src)#CFLAGS_trace.o := -I$(srctree)/$(src)#' $D/Makefile
+          echo 'ccflags-y += -I$(srctree)/$(src)' >> $D/Makefile
+          echo "=== Makefile DESPUÉS ==="
           cat $D/Makefile
 
       - name: Configure kernel (minimal)
@@ -114,6 +136,11 @@ jobs:
           mkdir -p ko_output
           find out -name "mt7601u.ko" -exec cp {} ko_output/ \; || true
           ls -la ko_output/ || echo "carpeta vacía"
+          if [ -f ko_output/mt7601u.ko ]; then
+            echo "=== Verificación del módulo ==="
+            ../clang/bin/llvm-nm ko_output/mt7601u.ko 2>/dev/null | grep -i vermagic || true
+            modinfo ko_output/mt7601u.ko 2>/dev/null || echo "modinfo no disponible en runner, verificar en el teléfono"
+          fi
 
       - name: Upload artifact
         if: always()

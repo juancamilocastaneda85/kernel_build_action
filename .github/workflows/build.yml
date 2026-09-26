@@ -31,7 +31,6 @@ jobs:
           cd kernel
           D=drivers/net/wireless/mediatek/mt7601u
           sed -i 's/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);/wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_AP);/' $D/init.c
-          grep -n "interface_modes" $D/init.c
 
       - name: Patch mt7601u traces
         run: |
@@ -47,8 +46,6 @@ jobs:
           grep -ohE 'trace_[a-zA-Z0-9_]+\(' $D/*.c | sed 's/($//' | sort -u | \
             grep -v 'trace_mt_mcu_msg_send_cs' | \
             awk '{print "#define " $0 "(...) do {} while (0)"}' > /tmp/patch_header.txt
-          echo "=== Stubs generados ==="
-          cat /tmp/patch_header.txt
           for f in usb.c init.c main.c mcu.c dma.c core.c eeprom.c phy.c mac.c tx.c util.c; do
             FILE=$D/$f
             if [ -f "$FILE" ]; then
@@ -84,50 +81,17 @@ jobs:
           mkdir -p ../out
           make ARCH=arm64 O=../out vendor/holi-qgki_defconfig
           for opt in \
-            MSM_PIL_SSR_GENERIC \
-            MSM_PIL \
-            MSM_SERVICE_LOCATOR \
-            MSM_SERVICE_NOTIFIER \
-            MSM_SUBSYSTEM_RESTART \
-            QCOM_RPMH \
-            QCOM_RPMHPD \
-            QCOM_MEMORY_DUMP_V2 \
-            QCOM_MINIDUMP \
-            QCOM_MINIDUMP_FTRACE \
-            QCOM_MINIDUMP_PANIC_DUMP \
-            QCOM_MICRODUMP \
-            QCOM_SECURE_BUFFER \
-            MSM_GLINK_SSR \
-            MSM_CDSP_LOADER \
-            MSM_RPM_SMD \
-            SCSI_UFS_QCOM \
-            SCSI_UFSHCD \
-            SCSI_UFSHCD_QTI \
-            SCSI_UFSHCD_PLATFORM \
-            SCSI_UFSHCD_PCI \
-            SCSI_UFS_CRYPTO \
-            SCSI_UFS_CRYPTO_QTI \
-            SCSI_UFS_BSG \
-            SCSI_UFS_HISI \
-            SCSI_UFS_DWC_TC_PLATFORM \
-            UFSFEATURE \
-            UFSHPB \
-            UFSTW \
-            UFSHID \
-            UFSHID_POC \
-            SCSI_SKHPB \
-            SCSI_SKHID \
-            MICRON_HPB \
-            MICRON_UFSHID \
-            IPA3 \
-            IPA_WDI_UNIFIED_API \
-            USB_BAM \
-            MSM_SPSS_UTILS \
-            MSM_BOOT_STATS \
-            QTI_HW_KEY_MANAGER \
-            QTI_CRYPTO_COMMON \
-            QTI_CRYPTO_TZ \
-            QTI_CRYPTO_FDE ; do
+            MSM_PIL_SSR_GENERIC MSM_PIL MSM_SERVICE_LOCATOR MSM_SERVICE_NOTIFIER \
+            MSM_SUBSYSTEM_RESTART QCOM_RPMH QCOM_RPMHPD QCOM_MEMORY_DUMP_V2 \
+            QCOM_MINIDUMP QCOM_MINIDUMP_FTRACE QCOM_MINIDUMP_PANIC_DUMP \
+            QCOM_MICRODUMP QCOM_SECURE_BUFFER MSM_GLINK_SSR MSM_CDSP_LOADER \
+            MSM_RPM_SMD SCSI_UFS_QCOM SCSI_UFSHCD SCSI_UFSHCD_QTI \
+            SCSI_UFSHCD_PLATFORM SCSI_UFSHCD_PCI SCSI_UFS_CRYPTO \
+            SCSI_UFS_CRYPTO_QTI SCSI_UFS_BSG SCSI_UFS_HISI \
+            SCSI_UFS_DWC_TC_PLATFORM UFSFEATURE UFSHPB UFSTW UFSHID \
+            UFSHID_POC SCSI_SKHPB SCSI_SKHID MICRON_HPB MICRON_UFSHID \
+            IPA3 IPA_WDI_UNIFIED_API USB_BAM MSM_SPSS_UTILS MSM_BOOT_STATS \
+            QTI_HW_KEY_MANAGER QTI_CRYPTO_COMMON QTI_CRYPTO_TZ QTI_CRYPTO_FDE ; do
             ./scripts/config --file ../out/.config --disable CONFIG_$opt
           done
           ./scripts/config --file ../out/.config --enable CONFIG_QCOM_SMEM
@@ -140,8 +104,6 @@ jobs:
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           yes "" | make ARCH=arm64 O=../out olddefconfig
-          echo "=== Config final ==="
-          grep -E "CONFIG_(MT7601U|WLAN_VENDOR_MEDIATEK|QCOM_SMEM|SCSI_UFS|IPA3|MSM_PIL)" ../out/.config
 
       - name: Build full kernel modules
         run: |
@@ -155,14 +117,46 @@ jobs:
             OBJDUMP=../clang/bin/llvm-objdump \
             STRIP=../clang/bin/llvm-strip \
             modules
+
+      - name: Verify Module.symvers
+        run: |
+          cd kernel
+          echo "=== ¿Module.symvers existe? ==="
+          ls -la ../out/Module.symvers 2>/dev/null || echo "(NO EXISTE)"
           echo ""
-          echo "=== DEPENDS del mt7601u.ko ==="
-          modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i "depends"
-          echo "=== VERMAGIC ==="
-          modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i vermagic
+          echo "=== Tamaño en líneas ==="
+          wc -l ../out/Module.symvers 2>/dev/null || echo "(vacío)"
+          echo ""
+          echo "=== ¿Tiene usbcore? ==="
+          grep -c "usbcore" ../out/Module.symvers 2>/dev/null || echo "0"
+          echo "=== ¿Tiene cfg80211? ==="
+          grep -c "cfg80211" ../out/Module.symvers 2>/dev/null || echo "0"
+          echo "=== ¿Tiene mac80211? ==="
+          grep -c "mac80211" ../out/Module.symvers 2>/dev/null || echo "0"
+
+      - name: Recompilar mt7601u con Module.symvers
+        run: |
+          cd kernel
+          rm -f ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+          rm -f ../out/drivers/net/wireless/mediatek/mt7601u/*.o
+          
+          make ARCH=arm64 O=../out -j4 \
+            CC=../clang/bin/clang \
+            LD=../clang/bin/ld.lld \
+            AR=../clang/bin/llvm-ar \
+            NM=../clang/bin/llvm-nm \
+            OBJCOPY=../clang/bin/llvm-objcopy \
+            OBJDUMP=../clang/bin/llvm-objdump \
+            STRIP=../clang/bin/llvm-strip \
+            M=drivers/net/wireless/mediatek/mt7601u \
+            modules
+          
+          echo ""
+          echo "=== DEPENDS ==="
+          modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i depends
           echo "=== ALIASES ==="
           modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -i "alias=usb" | head -3
-          echo "=== INITSIZE (debe ser > 0) ==="
+          echo "=== INITSIZE ==="
           readelf -S ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko 2>/dev/null | grep -A 1 ".init.text"
 
       - name: Copy mt7601u.ko

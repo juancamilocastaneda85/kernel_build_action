@@ -85,10 +85,17 @@ jobs:
           echo "=== CMDLINE configurado ==="
           grep CONFIG_CMDLINE ../out/.config
 
+      - name: Verify Module.symvers exists
+        run: |
+          cd kernel
+          echo "=== Module.symvers ==="
+          ls -la ../out/Module.symvers || echo "Module.symvers NO ENCONTRADO"
+          wc -l ../out/Module.symvers 2>/dev/null || true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kernel-fogos-coherent
+          name: kernel-fogos-lineage
           path: |
             out/arch/arm64/boot/Image
             out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko

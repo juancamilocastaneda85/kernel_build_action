@@ -32,12 +32,6 @@ jobs:
           mkdir -p clang
           curl -sL https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/archive/refs/heads/lineage-20.0.tar.gz | tar -xzf - -C clang --strip-components=1
           ls clang/bin/clang
-      - name: Confirm ext_config files exist
-        run: |
-          cd kernel
-          ls -la arch/arm64/configs/vendor/ext_config/sedona.config
-          ls -la arch/arm64/configs/vendor/ext_config/moto-holi-fogos.config
-          cat arch/arm64/configs/vendor/ext_config/sedona.config
       - name: Configure kernel
         run: |
           cd kernel
@@ -55,7 +49,7 @@ jobs:
         run: |
           cd kernel
           export PATH="$(pwd)/../clang/bin:$PATH"
-          make O=../out CC=clang LLVM=1 LLVM_IAS=1 -j4 KCFLAGS="-Wno-error" Image modules < /dev/null
+          make O=../out CC=clang LLVM=1 LLVM_IAS=1 -j4 KCFLAGS="-Wno-error -D__ANDROID_COMMON_KERNEL__" Image modules < /dev/null
       - uses: actions/upload-artifact@v4
         if: always()
         with:

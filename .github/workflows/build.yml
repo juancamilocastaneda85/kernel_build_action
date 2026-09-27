@@ -1,4 +1,4 @@
-name: Build Kernel with MT7601U (Fixed CRC + trace.h)
+name: Build Kernel with MT7601U (LineageOS 23.2 fogos)
 
 on:
   workflow_dispatch:
@@ -9,8 +9,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: juancamilocastaneda85/android_kernel_motorola_sm6375
-          ref: seventeen
+          repository: LineageOS/android_kernel_motorola_sm6375
+          ref: lineage-23.2
           path: kernel
 
       - name: Install dependencies
@@ -26,7 +26,6 @@ jobs:
       - name: Patch mt7601u trace.h
         run: |
           cd kernel
-          grep -n "TRACE_INCLUDE_PATH" drivers/net/wireless/mediatek/mt7601u/trace.h || true
           sed -i 's|#define TRACE_INCLUDE_PATH .*|#define TRACE_INCLUDE_PATH ../../drivers/net/wireless/mediatek/mt7601u|' \
             drivers/net/wireless/mediatek/mt7601u/trace.h
           grep -n "TRACE_INCLUDE_PATH" drivers/net/wireless/mediatek/mt7601u/trace.h
@@ -39,11 +38,9 @@ jobs:
           make O=../out CC=clang LLVM=1 LLVM_IAS=1 vendor/holi-qgki_defconfig vendor/ext_config/sedona.config vendor/ext_config/moto-holi-fogos.config
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
-          ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
-          ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           make O=../out CC=clang LLVM=1 LLVM_IAS=1 olddefconfig < /dev/null
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
-          grep -E "CONFIG_MT7601U=|CONFIG_TRIM_UNUSED_KSYMS=|CONFIG_MODVERSIONS=" ../out/.config
+          grep -E "CONFIG_MT7601U=|CONFIG_WLAN_VENDOR_MEDIATEK=|CONFIG_LOCALVERSION=|CONFIG_MODVERSIONS=" ../out/.config
 
       - name: Build kernel and modules
         run: |
@@ -64,7 +61,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kernel-sedona-fixed
+          name: kernel-fogos-lineage
           path: |
             out/arch/arm64/boot/Image
             out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko

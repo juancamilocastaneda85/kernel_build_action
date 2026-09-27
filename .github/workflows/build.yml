@@ -1,4 +1,4 @@
-name: Build Kernel with MT7601U (Fixed CRC)
+name: Build Kernel with MT7601U (Fixed CRC + trace.h)
 
 on:
   workflow_dispatch:
@@ -22,6 +22,14 @@ jobs:
         run: |
           mkdir -p clang
           curl -sL https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/archive/refs/heads/lineage-20.0.tar.gz | tar -xzf - -C clang --strip-components=1
+
+      - name: Patch mt7601u trace.h
+        run: |
+          cd kernel
+          grep -n "TRACE_INCLUDE_PATH" drivers/net/wireless/mediatek/mt7601u/trace.h || true
+          sed -i 's|#define TRACE_INCLUDE_PATH .*|#define TRACE_INCLUDE_PATH ../../drivers/net/wireless/mediatek/mt7601u|' \
+            drivers/net/wireless/mediatek/mt7601u/trace.h
+          grep -n "TRACE_INCLUDE_PATH" drivers/net/wireless/mediatek/mt7601u/trace.h
 
       - name: Configure kernel
         run: |
@@ -56,7 +64,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kernel-sedona-crc-fixed
+          name: kernel-sedona-fixed
           path: |
             out/arch/arm64/boot/Image
             out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko

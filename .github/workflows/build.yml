@@ -1,4 +1,4 @@
-name: Build Kernel with MT7601U (Sedona)
+name: Build Kernel with MT7601U (Fixed CRC)
 
 on:
   workflow_dispatch:
@@ -31,22 +31,32 @@ jobs:
           make O=../out CC=clang LLVM=1 LLVM_IAS=1 vendor/holi-qgki_defconfig vendor/ext_config/sedona.config vendor/ext_config/moto-holi-fogos.config
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
-          ./scripts/config --file ../out/.config --disable CONFIG_TRIM_UNUSED_KSYMS
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           make O=../out CC=clang LLVM=1 LLVM_IAS=1 olddefconfig < /dev/null
-          grep -E "CONFIG_MT7601U=|CONFIG_TRIM_UNUSED_KSYMS=|CONFIG_MODVERSIONS=|CONFIG_LOCALVERSION=" ../out/.config
+          ./scripts/config --file ../out/.config --module CONFIG_MT7601U
+          grep -E "CONFIG_MT7601U=|CONFIG_TRIM_UNUSED_KSYMS=|CONFIG_MODVERSIONS=" ../out/.config
 
-      - name: Build kernel
+      - name: Build kernel and modules
         run: |
           cd kernel
           export PATH="$(pwd)/../clang/bin:$PATH"
           make O=../out CC=clang LLVM=1 LLVM_IAS=1 -j4 KCFLAGS="-Wno-error -D__ANDROID_COMMON_KERNEL__" Image modules < /dev/null
 
+      - name: Rebuild mt7601u.ko with correct CRCs
+        run: |
+          cd kernel
+          export PATH="$(pwd)/../clang/bin:$PATH"
+          rm -f ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+          make O=../out CC=clang LLVM=1 LLVM_IAS=1 \
+            M=drivers/net/wireless/mediatek/mt7601u \
+            modules < /dev/null
+          ls -la ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kernel-sedona-output
+          name: kernel-sedona-crc-fixed
           path: |
             out/arch/arm64/boot/Image
             out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko

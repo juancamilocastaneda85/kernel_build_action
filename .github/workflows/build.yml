@@ -34,11 +34,12 @@ jobs:
         run: |
           cd kernel
           export PATH="$(pwd)/../clang/bin:$PATH"
+          export ARCH=arm64
           export LLVM=1 LLVM_IAS=1
-          make O=../out CC=clang LLVM=1 LLVM_IAS=1 vendor/holi-qgki_defconfig vendor/ext_config/sedona.config vendor/ext_config/moto-holi-fogos.config
+          make O=../out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 vendor/holi-qgki_defconfig vendor/ext_config/sedona.config vendor/ext_config/moto-holi-fogos.config
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
-          make O=../out CC=clang LLVM=1 LLVM_IAS=1 olddefconfig < /dev/null
+          make O=../out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig < /dev/null
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           grep -E "CONFIG_MT7601U=|CONFIG_WLAN_VENDOR_MEDIATEK=|CONFIG_LOCALVERSION=|CONFIG_MODVERSIONS=" ../out/.config
 
@@ -46,14 +47,16 @@ jobs:
         run: |
           cd kernel
           export PATH="$(pwd)/../clang/bin:$PATH"
-          make O=../out CC=clang LLVM=1 LLVM_IAS=1 -j4 KCFLAGS="-Wno-error -D__ANDROID_COMMON_KERNEL__" Image modules < /dev/null
+          export ARCH=arm64
+          make O=../out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 -j4 KCFLAGS="-Wno-error -D__ANDROID_COMMON_KERNEL__" Image modules < /dev/null
 
       - name: Rebuild mt7601u.ko with correct CRCs
         run: |
           cd kernel
           export PATH="$(pwd)/../clang/bin:$PATH"
+          export ARCH=arm64
           rm -f ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
-          make O=../out CC=clang LLVM=1 LLVM_IAS=1 \
+          make O=../out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
             M=drivers/net/wireless/mediatek/mt7601u \
             modules < /dev/null
           ls -la ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko

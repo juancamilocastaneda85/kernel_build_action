@@ -36,7 +36,7 @@ jobs:
           export PATH="$(pwd)/../clang/bin:$PATH"
           export ARCH=arm64
           export LLVM=1 LLVM_IAS=1
-          make O=../out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 vendor/holi-qgki_defconfig vendor/ext_config/sedona.config vendor/ext_config/moto-holi-fogos.config
+          make O=../out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 vendor/holi-qgki_defconfig
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
           make O=../out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig < /dev/null

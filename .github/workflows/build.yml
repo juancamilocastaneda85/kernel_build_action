@@ -30,6 +30,12 @@ jobs:
             drivers/net/wireless/mediatek/mt7601u/trace.h
           grep -n "TRACE_INCLUDE_PATH" drivers/net/wireless/mediatek/mt7601u/trace.h
 
+      - name: Patch setlocalversion to remove + suffix
+        run: |
+          cd kernel
+          sed -i 's|echo "+"|# echo "+"|g' scripts/setlocalversion
+          grep -n 'echo "+"' scripts/setlocalversion || echo "Patch applied - + suffix disabled"
+
       - name: Configure kernel
         run: |
           cd kernel
@@ -65,15 +71,13 @@ jobs:
             modules < /dev/null
           ls -la ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
 
-      - name: Verify vermagic
+      - name: Verify vermagic in .ko
         run: |
-          echo "=== Kernel vermagic ==="
-          strings ../out/vmlinux | grep -m1 "5.4.302" || true
+          echo "=== Vermagic del modulo ==="
+          strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -m1 "vermagic=" || true
           echo ""
-          echo "=== Module vermagic ==="
-          ../out/scripts/mod/modpost --version 2>/dev/null || true
-          modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko 2>/dev/null | grep vermagic || \
-            strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -m1 "vermagic=" || true
+          echo "=== LOCALVERSION configurado ==="
+          grep CONFIG_LOCALVERSION ../out/.config
 
       - uses: actions/upload-artifact@v4
         if: always()

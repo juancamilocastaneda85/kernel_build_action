@@ -4,18 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  check:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: juancamilocastaneda85/android_kernel_motorola_sm6375
-          ref: seventeen
-          path: kernel
-      - run: find kernel/arch/arm64/configs -maxdepth 3
-
   build:
-    needs: check
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -23,33 +12,37 @@ jobs:
           repository: juancamilocastaneda85/android_kernel_motorola_sm6375
           ref: seventeen
           path: kernel
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git build-essential flex bison libssl-dev libelf-dev bc python3 wget curl xz-utils
-      - name: Download clang (LineageOS r416183b)
+
+      - name: Download clang
         run: |
           mkdir -p clang
           curl -sL https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/archive/refs/heads/lineage-20.0.tar.gz | tar -xzf - -C clang --strip-components=1
-          ls clang/bin/clang
+
       - name: Configure kernel
         run: |
           cd kernel
           export PATH="$(pwd)/../clang/bin:$PATH"
-          export LLVM=1
-          export LLVM_IAS=1
+          export LLVM=1 LLVM_IAS=1
           make O=../out CC=clang LLVM=1 LLVM_IAS=1 vendor/holi-qgki_defconfig vendor/ext_config/sedona.config vendor/ext_config/moto-holi-fogos.config
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
+          ./scripts/config --file ../out/.config --disable CONFIG_TRIM_UNUSED_KSYMS
           ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto-gc8bc4b74db62"
           ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           make O=../out CC=clang LLVM=1 LLVM_IAS=1 olddefconfig < /dev/null
-          grep -E "CONFIG_CFI_CLANG=|CONFIG_LTO_CLANG=|CONFIG_THINLTO=|CONFIG_MT7601U=|CONFIG_WLAN_VENDOR_MEDIATEK=|CONFIG_MODULE_REL_CRCS=|CONFIG_MODVERSIONS=" ../out/.config
+          grep -E "CONFIG_MT7601U=|CONFIG_TRIM_UNUSED_KSYMS=|CONFIG_MODVERSIONS=|CONFIG_LOCALVERSION=" ../out/.config
+
       - name: Build kernel
         run: |
           cd kernel
           export PATH="$(pwd)/../clang/bin:$PATH"
           make O=../out CC=clang LLVM=1 LLVM_IAS=1 -j4 KCFLAGS="-Wno-error -D__ANDROID_COMMON_KERNEL__" Image modules < /dev/null
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -57,4 +50,5 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+            out/Module.symvers
           if-no-files-found: warn

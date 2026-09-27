@@ -39,9 +39,13 @@ jobs:
           make O=../out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 vendor/holi-qgki_defconfig
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
           ./scripts/config --file ../out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
+          ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto"
+          ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
           make O=../out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig < /dev/null
           ./scripts/config --file ../out/.config --module CONFIG_MT7601U
-          grep -E "CONFIG_MT7601U=|CONFIG_WLAN_VENDOR_MEDIATEK=|CONFIG_LOCALVERSION=|CONFIG_MODVERSIONS=" ../out/.config
+          ./scripts/config --file ../out/.config --set-str CONFIG_LOCALVERSION "-moto"
+          ./scripts/config --file ../out/.config --disable CONFIG_LOCALVERSION_AUTO
+          grep -E "CONFIG_MT7601U=|CONFIG_WLAN_VENDOR_MEDIATEK=|CONFIG_LOCALVERSION=|CONFIG_LOCALVERSION_AUTO=|CONFIG_MODVERSIONS=" ../out/.config
 
       - name: Build kernel and modules
         run: |
@@ -60,6 +64,16 @@ jobs:
             M=drivers/net/wireless/mediatek/mt7601u \
             modules < /dev/null
           ls -la ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko
+
+      - name: Verify vermagic
+        run: |
+          echo "=== Kernel vermagic ==="
+          strings ../out/vmlinux | grep -m1 "5.4.302" || true
+          echo ""
+          echo "=== Module vermagic ==="
+          ../out/scripts/mod/modpost --version 2>/dev/null || true
+          modinfo ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko 2>/dev/null | grep vermagic || \
+            strings ../out/drivers/net/wireless/mediatek/mt7601u/mt7601u.ko | grep -m1 "vermagic=" || true
 
       - uses: actions/upload-artifact@v4
         if: always()
